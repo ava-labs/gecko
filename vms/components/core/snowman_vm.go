@@ -138,17 +138,42 @@ func (svm *SnowmanVM) NotifyBlockReady() {
 //   * The LockOption is the first element of [lockOption]
 //     By default the LockOption is WriteLock
 //     [lockOption] should have either 0 or 1 elements. Elements beside the first are ignored.
+var mapping map[string]string = map[string]string{
+	"/subnet/get":                      "GetSubnets",
+	"/subnet/create":                   "CreateSubnet",
+	"/subnet/blockchain/ids":           "Validates",
+	"/validator/current":               "GetCurrentValidators",
+	"/validator/pending":               "GetPendingValidators",
+	"/validator/sample":                "SampleValidators",
+	"/validator/add/subnet/default":    "AddDefaultSubnetValidator",
+	"/delegator/add/subnet/default":    "AddDefaultSubnetDelegator",
+	"/delegator/add/subnet/nondefault": "AddNonDefaultSubnetValidator",
+	"/account/get":                     "GetAccount",
+	"/account/list":                    "ListAccounts",
+	"/account/create":                  "CreateAccount",
+	"/ava/export":                      "ExportAVA",
+	"/ava/import":                      "ImportAVA",
+	"/sign":                            "Sign",
+	"/tx/issue":                        "IssueTx",
+	"/blockchain/create":               "CreateBlockchain",
+	"/blockchain/status":               "GetBlockchainStatus",
+	"/blockchain/get":                  "GetBlockchains",
+	"/blockchain/validator/ids":        "ValidatedBy",
+}
+
 func (svm *SnowmanVM) NewHandler(name string, service interface{}, lockOption ...common.LockOption) *common.HTTPHandler {
 	server := rpc.NewServer()
-	server.RegisterCodec(json.NewCodec(), "application/json")
-	server.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
+	restMap := json.MappingGenerator(mapping, "platform")
+	codec := json.RestCodec{Mapping: restMap}
+	server.RegisterCodec(codec, "application/json")
+	server.RegisterCodec(codec, "application/json;charset=UTF-8")
 	server.RegisterService(service, name)
 
 	var lock common.LockOption = common.WriteLock
 	if len(lockOption) != 0 {
 		lock = lockOption[0]
 	}
-	return &common.HTTPHandler{LockOptions: lock, Handler: server}
+	return &common.HTTPHandler{LockOptions: lock, Handler: server, RestEndpoints: restMap.GetKeys()}
 }
 
 // Initialize this vm.

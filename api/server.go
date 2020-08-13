@@ -19,6 +19,7 @@ import (
 	"github.com/ava-labs/gecko/snow"
 	"github.com/ava-labs/gecko/snow/engine/common"
 	"github.com/ava-labs/gecko/utils/logging"
+	"github.com/ava-labs/gecko/utils/wrappers"
 )
 
 const baseURL = "/ext"
@@ -105,24 +106,31 @@ func (s *Server) AddRoute(handler *common.HTTPHandler, lock *sync.RWMutex, base,
 	url := fmt.Sprintf("%s/%s", baseURL, base)
 	s.log.Info("adding route %s%s", url, endpoint)
 	h := handlers.CombinedLoggingHandler(log, handler.Handler)
-	switch handler.LockOptions {
-	case common.WriteLock:
-		return s.router.AddRouter(url, endpoint, middlewareHandler{
-			before:  lock.Lock,
-			after:   lock.Unlock,
-			handler: h,
-		})
-	case common.ReadLock:
-		return s.router.AddRouter(url, endpoint, middlewareHandler{
-			before:  lock.RLock,
-			after:   lock.RUnlock,
-			handler: h,
-		})
-	case common.NoLock:
-		return s.router.AddRouter(url, endpoint, h)
-	default:
-		return errUnknownLockOption
+	errs := wrappers.Errs{}
+	for _, endpoint := range append(handler.RestEndpoints, endpoint) {
+		switch handler.LockOptions {
+		case common.WriteLock:
+			errs.Add(s.router.AddRouter(url, endpoint, middlewareHandler{
+				before:  lock.Lock,
+				after:   lock.Unlock,
+				handler: h,
+			}))
+		case common.ReadLock:
+			errs.Add(s.router.AddRouter(url, endpoint, middlewareHandler{
+				before:  lock.RLock,
+				after:   lock.RUnlock,
+				handler: h,
+			}))
+		case common.NoLock:
+			errs.Add(s.router.AddRouter(url, endpoint, h))
+		default:
+			errs.Add(errUnknownLockOption)
+		}
 	}
+	if errs.Errored() {
+		return errs.Err
+	}
+	return nil
 }
 
 // AddAliases registers aliases to the server

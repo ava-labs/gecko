@@ -19,6 +19,7 @@ const (
 
 // HTTPHandler ...
 type HTTPHandler struct {
-	LockOptions LockOption
-	Handler     http.Handler
+	LockOptions   LockOption
+	Handler       http.Handler
+	RestEndpoints []string
 }

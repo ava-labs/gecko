@@ -104,14 +104,23 @@ func (ks *Keystore) Initialize(log logging.Logger, db database.Database) {
 	ks.bcDB = prefixdb.New([]byte("bcs"), db)
 }
 
+var mapping map[string]string = map[string]string{
+	"/user/create": "CreateUser",
+	"/user/delete": "DeleteUser",
+	"/user/list":   "ListUsers",
+	"/user/import": "ImportUser",
+	"/user/export": "ExportUser",
+}
+
 // CreateHandler returns a new service object that can send requests to thisAPI.
 func (ks *Keystore) CreateHandler() *common.HTTPHandler {
 	newServer := rpc.NewServer()
-	codec := jsoncodec.NewCodec()
+	restMap := jsoncodec.MappingGenerator(mapping, "keystore")
+	codec := jsoncodec.RestCodec{Mapping: restMap}
 	newServer.RegisterCodec(codec, "application/json")
 	newServer.RegisterCodec(codec, "application/json;charset=UTF-8")
 	newServer.RegisterService(ks, "keystore")
-	return &common.HTTPHandler{LockOptions: common.NoLock, Handler: newServer}
+	return &common.HTTPHandler{LockOptions: common.NoLock, Handler: newServer, RestEndpoints: restMap.GetKeys()}
 }
 
 // Get the user whose name is [username]

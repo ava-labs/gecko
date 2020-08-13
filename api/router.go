@@ -75,6 +75,8 @@ func (r *router) addRouter(base, endpoint string, handler http.Handler) error {
 	return r.forceAddRouter(base, endpoint, handler)
 }
 
+//  Endpoint and its aliases will call the same handler as
+//  forceAddRouter iterates over aliases of enpoint and adds the same handler
 func (r *router) forceAddRouter(base, endpoint string, handler http.Handler) error {
 	endpoints := r.routes[base]
 	if endpoints == nil {
