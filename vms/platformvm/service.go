@@ -1723,7 +1723,7 @@ func (service *Service) chainExists(blockID ids.ID, chainID ids.ID) (bool, error
 
 	block, ok := blockIntf.(decision)
 	if !ok {
-		block, ok = blockIntf.Parent().(decision)
+		block, ok = blockIntf.parentBlock().(decision)
 		if !ok {
 			return false, errMissingDecisionBlock
 		}

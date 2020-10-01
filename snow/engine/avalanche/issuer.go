@@ -68,7 +68,6 @@ func (i *issuer) Update() {
 	// Some of the transactions weren't valid. Abandon this vertex.
 	// Take the valid transactions and issue a new vertex with them.
 	if len(validTxs) != len(txs) {
-		i.t.Ctx.Log.Debug("Abandoning %s due to failed transaction verification", vtxID)
 		if err := i.t.batch(validTxs, false /*=force*/, false /*=empty*/); err != nil {
 			i.t.errs.Add(err)
 		}

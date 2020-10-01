@@ -18,7 +18,7 @@ func TestMissingBlock(t *testing.T) {
 		t.Fatalf("missingBlock.ID returned %s, expected %s", blkID, id)
 	} else if status := mb.Status(); status != choices.Unknown {
 		t.Fatalf("missingBlock.Status returned %s, expected %s", status, choices.Unknown)
-	} else if parent := mb.Parent(); parent != nil {
+	} else if parent := mb.Parent(); !parent.IsZero() {
 		t.Fatalf("missingBlock.Parent returned %v, expected %v", parent, nil)
 	} else if err := mb.Verify(); err == nil {
 		t.Fatalf("missingBlock.Verify returned nil, expected an error")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/ava-labs/avalanchego/cache"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/snowman"
@@ -16,6 +17,13 @@ import (
 	"github.com/ava-labs/avalanchego/snow/engine/snowman/block"
 	"github.com/ava-labs/avalanchego/snow/validators"
 	"github.com/ava-labs/avalanchego/utils/formatting"
+	"github.com/ava-labs/avalanchego/vms/components/missing"
+)
+
+const (
+	// Size of block cache
+	// Must be larger than common.MaxContainersPerMultiput
+	blockCacheSize = 10000
 )
 
 // Config ...
@@ -43,6 +51,11 @@ type Bootstrapper struct {
 
 	Bootstrapped func()
 
+	// Cache of blocks.
+	// Key: Block ID
+	// Value: The block
+	blockCache cache.LRU
+
 	// true if all of the vertices in the original accepted frontier have been processed
 	processedStartingAcceptedFrontier bool
 }
@@ -58,6 +71,7 @@ func (b *Bootstrapper) Initialize(
 	b.VM = config.VM
 	b.Bootstrapped = config.Bootstrapped
 	b.OnFinished = onFinished
+	b.blockCache = cache.LRU{Size: blockCacheSize}
 
 	if err := b.metrics.Initialize(namespace, registerer); err != nil {
 		return err
@@ -68,6 +82,7 @@ func (b *Bootstrapper) Initialize(
 		numAccepted: b.numAccepted,
 		numDropped:  b.numDropped,
 		vm:          b.VM,
+		bs:          b,
 	})
 
 	config.Bootstrapable = b
@@ -85,7 +100,7 @@ func (b *Bootstrapper) CurrentAcceptedFrontier() ids.Set {
 func (b *Bootstrapper) FilterAccepted(containerIDs ids.Set) ids.Set {
 	acceptedIDs := ids.Set{}
 	for _, blkID := range containerIDs.List() {
-		if blk, err := b.VM.GetBlock(blkID); err == nil && blk.Status() == choices.Accepted {
+		if blk, err := b.GetBlock(blkID); err == nil && blk.Status() == choices.Accepted {
 			acceptedIDs.Add(blkID)
 		}
 	}
@@ -100,7 +115,7 @@ func (b *Bootstrapper) ForceAccepted(acceptedContainerIDs ids.Set) error {
 	}
 
 	for _, blkID := range acceptedContainerIDs.List() {
-		if blk, err := b.VM.GetBlock(blkID); err == nil {
+		if blk, err := b.GetBlock(blkID); err == nil {
 			if err := b.process(blk); err != nil {
 				return err
 			}
@@ -124,7 +139,7 @@ func (b *Bootstrapper) fetch(blkID ids.ID) error {
 	}
 
 	// Make sure we don't already have this block
-	if _, err := b.VM.GetBlock(blkID); err == nil {
+	if _, err := b.GetBlock(blkID); err == nil {
 		if numPending := b.OutstandingRequests.Len(); numPending == 0 && b.processedStartingAcceptedFrontier {
 			return b.finish()
 		}
@@ -162,25 +177,36 @@ func (b *Bootstrapper) MultiPut(vdr ids.ShortID, requestID uint32, blks [][]byte
 			vdr, requestID)
 		return nil
 	}
-
-	wantedBlk, err := b.VM.ParseBlock(blks[0]) // the block we requested
-	if err != nil {
-		b.Ctx.Log.Debug("Failed to parse requested block %s: %s", wantedBlkID, err)
-		return b.fetch(wantedBlkID)
-	} else if actualID := wantedBlk.ID(); !actualID.Equals(wantedBlkID) {
-		b.Ctx.Log.Debug("expected the first block to be the requested block, %s, but is %s",
-			wantedBlk, actualID)
-		return b.fetch(wantedBlkID)
-	}
-
-	for _, blkBytes := range blks {
-		if _, err := b.VM.ParseBlock(blkBytes); err != nil { // persists the block
+	var blk, tail snowman.Block
+	var err error
+	for i, blkBytes := range blks {
+		if blk, err = b.VM.ParseBlock(blkBytes); err != nil { // Parse the block from bytes
 			b.Ctx.Log.Debug("Failed to parse block: %s", err)
 			b.Ctx.Log.Verbo("block: %s", formatting.DumpBytes{Bytes: blkBytes})
+			if err := b.fetch(wantedBlkID); err != nil {
+				return fmt.Errorf("couldn't fetch %s", wantedBlkID)
+			}
+			break
 		}
+		if i == 0 {
+			tail = blk
+		}
+		blkID := blk.ID()
+		if !blkID.Equals(wantedBlkID) {
+			b.Ctx.Log.Debug("expected the next block to be %s but is %s", wantedBlkID, blkID)
+			if err := b.fetch(wantedBlkID); err != nil {
+				return fmt.Errorf("couldn't fetch %s", wantedBlkID)
+			}
+			break
+		}
+		wantedBlkID = blk.Parent()
+		if err := b.VM.SaveBlock(blk); err != nil {
+			return fmt.Errorf("couldn't save block %s: %w", blk.ID(), err)
+		}
+		b.blockCache.Put(blkID, blk) // Put block in cache
 	}
 
-	return b.process(wantedBlk)
+	return b.process(tail)
 }
 
 // GetAncestorsFailed is called when a GetAncestors message we sent fails
@@ -200,11 +226,13 @@ func (b *Bootstrapper) process(blk snowman.Block) error {
 	status := blk.Status()
 	blkID := blk.ID()
 	for status == choices.Processing {
-		if err := b.Blocked.Push(&blockJob{
+		err := b.Blocked.Push(&blockJob{
 			numAccepted: b.numAccepted,
 			numDropped:  b.numDropped,
 			blk:         blk,
-		}); err == nil {
+			bs:          b,
+		})
+		if err == nil {
 			b.numFetched.Inc()
 			b.NumFetched++                                      // Progress tracker
 			if b.NumFetched%common.StatusUpdateFrequency == 0 { // Periodically print progress
@@ -217,9 +245,12 @@ func (b *Bootstrapper) process(blk snowman.Block) error {
 		}
 
 		// Process this block's parent
-		blk = blk.Parent()
+		blkID = blk.Parent()
+		blk, err = b.GetBlock(blkID)
+		if err != nil {
+			blk = &missing.Block{BlkID: blkID}
+		}
 		status = blk.Status()
-		blkID = blk.ID()
 	}
 
 	switch status := blk.Status(); status {
@@ -284,6 +315,20 @@ func (b *Bootstrapper) executeAll(jobs *queue.Jobs) error {
 	}
 	b.Ctx.Log.Info("executed %d blocks", numExecuted)
 	return nil
+}
+
+// GetBlock gets the block with ID [id].
+// Return an error if the block can't be found.
+func (b *Bootstrapper) GetBlock(id ids.ID) (snowman.Block, error) {
+	if block, ok := b.blockCache.Get(id); ok {
+		return block.(snowman.Block), nil
+	}
+	block, err := b.VM.GetBlock(id)
+	if err != nil {
+		return nil, err
+	}
+	b.blockCache.Put(id, block)
+	return block, err
 }
 
 // Connected implements the Engine interface.

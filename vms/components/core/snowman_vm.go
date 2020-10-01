@@ -115,8 +115,8 @@ func (svm *SnowmanVM) SetDBInitialized() error {
 }
 
 // SaveBlock saves [block] to state
-func (svm *SnowmanVM) SaveBlock(db database.Database, block snowman.Block) error {
-	return svm.State.Put(db, state.BlockTypeID, block.ID(), block)
+func (svm *SnowmanVM) SaveBlock(block snowman.Block) error {
+	return svm.State.Put(svm.DB, state.BlockTypeID, block.ID(), block)
 }
 
 // NotifyBlockReady tells the consensus engine that a new block

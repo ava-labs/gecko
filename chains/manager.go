@@ -479,9 +479,9 @@ func (m *manager) createSnowmanChain(
 
 	db := prefixdb.New(ctx.ChainID.Bytes(), m.DB)
 	vmDB := prefixdb.New([]byte("vm"), db)
-	bootstrappingDB := prefixdb.New([]byte("bs"), db)
+	bootstrappingQueueDB := prefixdb.New([]byte("bs"), db)
 
-	blocked, err := queue.New(bootstrappingDB)
+	blocked, err := queue.New(bootstrappingQueueDB)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,6 @@ import (
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/snowman"
 	"github.com/ava-labs/avalanchego/vms/components/core"
-	"github.com/ava-labs/avalanchego/vms/components/missing"
 )
 
 // When one stakes, one must specify the time one will start to validate and
@@ -148,15 +147,6 @@ func (cb *CommonBlock) conflicts(s ids.Set) bool {
 		return false
 	}
 	return cb.parentBlock().conflicts(s)
-}
-
-// Parent returns this block's parent
-func (cb *CommonBlock) Parent() snowman.Block {
-	parent := cb.parentBlock()
-	if parent != nil {
-		return parent
-	}
-	return &missing.Block{BlkID: cb.ParentID()}
 }
 
 // parentBlock returns this block's parent

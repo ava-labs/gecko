@@ -10,8 +10,8 @@ import (
 )
 
 type metrics struct {
-	numRequests, numBlocked prometheus.Gauge
-	getAncestorsBlks        prometheus.Histogram
+	numRequests, numBlocked, numProcessing prometheus.Gauge
+	getAncestorsBlks                       prometheus.Histogram
 }
 
 // Initialize the metrics
@@ -24,7 +24,12 @@ func (m *metrics) Initialize(namespace string, registerer prometheus.Registerer)
 	m.numBlocked = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "blocked",
-		Help:      "Number of blocks that are pending issuance",
+		Help:      "Number of blocks that are queued to be added to consensus once dependencies are met",
+	})
+	m.numProcessing = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "processing",
+		Help:      "Number of blocks that are currently processing in the engine",
 	})
 	m.getAncestorsBlks = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: namespace,
@@ -47,6 +52,7 @@ func (m *metrics) Initialize(namespace string, registerer prometheus.Registerer)
 	errs.Add(
 		registerer.Register(m.numRequests),
 		registerer.Register(m.numBlocked),
+		registerer.Register(m.numProcessing),
 		registerer.Register(m.getAncestorsBlks),
 	)
 	return errs.Err

@@ -11,7 +11,7 @@ import (
 )
 
 func TestTxHeapStart(t *testing.T) {
-	vm, _ := defaultVM()
+	vm, _ := defaultVM(t)
 	vm.Ctx.Lock.Lock()
 	defer func() {
 		vm.Shutdown()
@@ -84,7 +84,7 @@ func TestTxHeapStart(t *testing.T) {
 }
 
 func TestTxHeapStop(t *testing.T) {
-	vm, _ := defaultVM()
+	vm, _ := defaultVM(t)
 	vm.Ctx.Lock.Lock()
 	defer func() {
 		vm.Shutdown()
@@ -157,7 +157,7 @@ func TestTxHeapStop(t *testing.T) {
 }
 
 func TestTxHeapStartValidatorVsDelegatorOrdering(t *testing.T) {
-	vm, _ := defaultVM()
+	vm, _ := defaultVM(t)
 	vm.Ctx.Lock.Lock()
 	defer func() {
 		vm.Shutdown()
@@ -202,7 +202,7 @@ func TestTxHeapStartValidatorVsDelegatorOrdering(t *testing.T) {
 }
 
 func TestTxHeapStopValidatorVsDelegatorOrdering(t *testing.T) {
-	vm, _ := defaultVM()
+	vm, _ := defaultVM(t)
 	vm.Ctx.Lock.Lock()
 	defer func() {
 		vm.Shutdown()

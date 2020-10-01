@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ava-labs/avalanchego/cache"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/network"
 	"github.com/ava-labs/avalanchego/snow/choices"
@@ -19,12 +20,19 @@ import (
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
+	"github.com/ava-labs/avalanchego/vms/components/missing"
 )
 
 const (
 	// TODO define this constant in one place rather than here and in snowman
 	// Max containers size in a MultiPut message
 	maxContainersLen = int(4 * network.DefaultMaxMessageSize / 5)
+
+	// Max size of cache of accepted/rejected block IDs
+	decidedCacheSize = 5000
+
+	// Max size of cache of dropped blocks
+	droppedCacheSize = 1000
 )
 
 // Transitive implements the Engine interface by attempting to fetch all
@@ -51,6 +59,23 @@ type Transitive struct {
 
 	// errs tracks if an error has occurred in a callback
 	errs wrappers.Errs
+
+	// Key: ID of a processing block
+	// Value: The block
+	// Invariant: Every block in this map is processing
+	// If a block is dropped, it will be removed from this map.
+	// However, it may be re-added later.
+	processing map[[32]byte]snowman.Block
+
+	// Cache of decided block IDs.
+	// Key: Block ID
+	// Value: nil
+	decidedCache cache.LRU
+
+	// Cache of dropped blocks
+	// We keep this so that if we drop a block and receive a query for it,
+	// we don't need to fetch the block again
+	droppedCache cache.LRU
 }
 
 // Initialize implements the Engine interface
@@ -66,8 +91,11 @@ func (t *Transitive) Initialize(config Config) error {
 		config.Params.Namespace,
 		config.Params.Metrics,
 	)
+	t.processing = map[[32]byte]snowman.Block{}
+	t.decidedCache = cache.LRU{Size: decidedCacheSize}
+	t.droppedCache = cache.LRU{Size: droppedCacheSize}
 
-	if err := t.metrics.Initialize(config.Params.Namespace, config.Params.Metrics); err != nil {
+	if err := t.metrics.Initialize(fmt.Sprintf("%s_engine", config.Params.Namespace), config.Params.Metrics); err != nil {
 		return err
 	}
 
@@ -84,7 +112,9 @@ func (t *Transitive) Initialize(config Config) error {
 func (t *Transitive) finishBootstrapping() error {
 	// initialize consensus to the last accepted blockID
 	lastAcceptedID := t.VM.LastAccepted()
-	t.Consensus.Initialize(t.Ctx, t.Params, lastAcceptedID)
+	params := t.Params
+	params.Namespace = fmt.Sprintf("%s_consensus", params.Namespace)
+	t.Consensus.Initialize(t.Ctx, params, lastAcceptedID)
 
 	lastAccepted, err := t.VM.GetBlock(lastAcceptedID)
 	if err != nil {
@@ -118,7 +148,7 @@ func (t *Transitive) finishBootstrapping() error {
 // Gossip implements the Engine interface
 func (t *Transitive) Gossip() error {
 	blkID := t.VM.LastAccepted()
-	blk, err := t.VM.GetBlock(blkID)
+	blk, err := t.GetBlock(blkID)
 	if err != nil {
 		t.Ctx.Log.Warn("dropping gossip request as %s couldn't be loaded due to %s", blkID, err)
 		return nil
@@ -136,7 +166,7 @@ func (t *Transitive) Shutdown() error {
 
 // Get implements the Engine interface
 func (t *Transitive) Get(vdr ids.ShortID, requestID uint32, blkID ids.ID) error {
-	blk, err := t.VM.GetBlock(blkID)
+	blk, err := t.GetBlock(blkID)
 	if err != nil {
 		// If we failed to get the block, that means either an unexpected error
 		// has occurred, the validator is not following the protocol, or the
@@ -153,7 +183,7 @@ func (t *Transitive) Get(vdr ids.ShortID, requestID uint32, blkID ids.ID) error 
 // GetAncestors implements the Engine interface
 func (t *Transitive) GetAncestors(vdr ids.ShortID, requestID uint32, blkID ids.ID) error {
 	startTime := time.Now()
-	blk, err := t.VM.GetBlock(blkID)
+	blk, err := t.GetBlock(blkID)
 	if err != nil { // Don't have the block. Drop this request.
 		t.Ctx.Log.Verbo("couldn't get block %s. dropping GetAncestors(%s, %d, %s)", blkID, vdr, requestID, blkID)
 		return nil
@@ -164,9 +194,10 @@ func (t *Transitive) GetAncestors(vdr ids.ShortID, requestID uint32, blkID ids.I
 	ancestorsBytesLen := len(blk.Bytes()) + wrappers.IntLen // length, in bytes, of all elements of ancestors
 
 	for numFetched := 1; numFetched < common.MaxContainersPerMultiPut && time.Since(startTime) < common.MaxTimeFetchingAncestors; numFetched++ {
-		blk = blk.Parent()
-		if blk.Status() == choices.Unknown {
-			break
+		blkID = blk.Parent()
+		blk, err := t.GetBlock(blkID)
+		if err != nil {
+			break // We don't have the next block
 		}
 		blkBytes := blk.Bytes()
 		// Ensure response size isn't too large. Include wrappers.IntLen because the size of the message
@@ -284,6 +315,9 @@ func (t *Transitive) PushQuery(vdr ids.ShortID, requestID uint32, blkID ids.ID, 
 		t.Ctx.Log.Debug("failed to parse block %s: %s", blkID, err)
 		t.Ctx.Log.Verbo("block:\n%s", formatting.DumpBytes{Bytes: blkBytes})
 		return nil
+	} else if !blk.ID().Equals(blkID) {
+		t.Ctx.Log.Debug("query said block's ID is %s but parsed ID %s. Dropping query", blkID, blk.ID())
+		return nil
 	}
 
 	// issue the block into consensus. If the block has already been issued,
@@ -296,7 +330,7 @@ func (t *Transitive) PushQuery(vdr ids.ShortID, requestID uint32, blkID ids.ID, 
 	}
 
 	// register the chit request
-	return t.PullQuery(vdr, requestID, blk.ID())
+	return t.PullQuery(vdr, requestID, blkID)
 }
 
 // Chits implements the Engine interface
@@ -374,20 +408,28 @@ func (t *Transitive) Notify(msg common.Message) error {
 			t.Ctx.Log.Debug("VM.BuildBlock errored with: %s", err)
 			return nil
 		}
+		blkID := blk.ID()
 
 		// a newly created block is expected to be processing. If this check
 		// fails, there is potentially an error in the VM this engine is running
 		if status := blk.Status(); status != choices.Processing {
-			t.Ctx.Log.Warn("attempting to issue a block with status: %s, expected Processing", status)
+			t.Ctx.Log.Warn("attempted to issue a block with status: %s, expected Processing", status)
+			return nil
+		} else if t.pending.Contains(blkID) || t.Consensus.Issued(blk) {
+			t.Ctx.Log.Warn("attemped to issue already issued block %s", blkID)
+			return nil
 		}
 
 		// The newly created block should be built on top of the preferred block.
 		// Otherwise, the new block doesn't have the best chance of being confirmed.
-		parentID := blk.Parent().ID()
+		parentID := blk.Parent()
 		if pref := t.Consensus.Preference(); !parentID.Equals(pref) {
 			t.Ctx.Log.Warn("built block with parent: %s, expected %s", parentID, pref)
 		}
 
+		t.processing[blkID.Key()] = blk
+		t.droppedCache.Evict(blkID)
+		t.numProcessing.Set(float64(len(t.processing))) // Record metric
 		added, err := t.issueWithAncestors(blk)
 		if err != nil {
 			return err
@@ -421,11 +463,26 @@ func (t *Transitive) repoll() {
 // If we do not have [blkID], request it.
 // Returns true if the block was issued, now or previously, to consensus.
 func (t *Transitive) issueFromByID(vdr ids.ShortID, blkID ids.ID) (bool, error) {
-	blk, err := t.VM.GetBlock(blkID)
+	// See if block [blkID] was recently accepted/rejected.
+	_, wasDecided := t.decidedCache.Get(blkID)
+	if wasDecided {
+		// Block [blkID] was decided, so it must have been previously added to consensus.
+		return true, nil
+	}
+	blk, err := t.GetBlock(blkID)
 	if err != nil {
+		// We don't have block [blkID]. Request it from [vdr].
 		t.sendRequest(vdr, blkID)
 		return false, nil
 	}
+	// We have block [blkID]
+	if blk.Status().Decided() {
+		// block [blkID] has already been decided.
+		t.decidedCache.Put(blkID, nil)
+		return true, nil
+	}
+	// We have block [blkID] but it's not yet decided.
+	// Queue it to be added to consensus.
 	return t.issueFrom(vdr, blk)
 }
 
@@ -437,16 +494,20 @@ func (t *Transitive) issueFrom(vdr ids.ShortID, blk snowman.Block) (bool, error)
 	// issue [blk] and its ancestors to consensus.
 	// If the block has been issued, we don't need to issue it.
 	// If the block is queued to be issued, we don't need to issue it.
+	var err error
 	for !t.Consensus.Issued(blk) && !t.pending.Contains(blkID) {
 		if err := t.issue(blk); err != nil {
 			return false, err
 		}
 
-		blk = blk.Parent()
-		blkID = blk.ID()
-
-		// If we don't have this ancestor, request it from [vdr]
-		if !blk.Status().Fetched() {
+		blkID = blk.Parent()
+		if _, decided := t.decidedCache.Get(blkID); decided {
+			// We already decided this block. No need to fetch/try to add any more ancestors to consensus.
+			break
+		}
+		blk, err = t.GetBlock(blkID)
+		if err != nil || !blk.Status().Fetched() {
+			// If we don't have this ancestor, request it from [vdr]
 			t.sendRequest(vdr, blkID)
 			return false, nil
 		}
@@ -459,13 +520,18 @@ func (t *Transitive) issueFrom(vdr ids.ShortID, blk snowman.Block) (bool, error)
 // If a dependency is missing and the dependency hasn't been requested, the issuance will be abandoned.
 func (t *Transitive) issueWithAncestors(blk snowman.Block) (bool, error) {
 	blkID := blk.ID()
+
 	// issue [blk] and its ancestors into consensus
+	var err error
 	for blk.Status().Fetched() && !t.Consensus.Issued(blk) && !t.pending.Contains(blkID) {
 		if err := t.issue(blk); err != nil {
 			return false, err
 		}
-		blk = blk.Parent()
-		blkID = blk.ID()
+		blkID = blk.Parent()
+		blk, err = t.GetBlock(blkID)
+		if err != nil { // Can't find the next ancestor
+			blk = &missing.Block{BlkID: blkID}
+		}
 	}
 
 	// The block was issued into consensus. This is the happy path.
@@ -488,6 +554,11 @@ func (t *Transitive) issueWithAncestors(blk snowman.Block) (bool, error) {
 // Issue [blk] to consensus once its ancestors have been issued.
 func (t *Transitive) issue(blk snowman.Block) error {
 	blkID := blk.ID()
+	if blk.Status() == choices.Processing { // Pin this block in memory until it's decided or dropped
+		t.processing[blk.ID().Key()] = blk
+		t.droppedCache.Evict(blkID)
+		t.numProcessing.Set(float64(len(t.processing)))
+	}
 
 	// mark that the block is queued to be added to consensus once its ancestors have been
 	t.pending.Add(blkID)
@@ -495,15 +566,21 @@ func (t *Transitive) issue(blk snowman.Block) error {
 	// Remove any outstanding requests for this block
 	t.blkReqs.RemoveAny(blkID)
 
-	// Will add [blk] to consensus once its ancestors have been
+	// Will add [blk] to consensus once its ancestors have been added
 	i := &issuer{
 		t:   t,
 		blk: blk,
 	}
 
 	// block on the parent if needed
-	if parent := blk.Parent(); !t.Consensus.Issued(parent) {
-		parentID := parent.ID()
+	parentID := blk.Parent()
+	_, parentIssued := t.decidedCache.Get(parentID) // If parent is in decided cache, it was previously issued
+	if !parentIssued {
+		if parent, err := t.GetBlock(parentID); err == nil { // Try to get the parent (returns err if the parent is rejected)
+			parentIssued = t.Consensus.Issued(parent) // If we have block locally, check if it's issued
+		}
+	}
+	if !parentIssued {
 		t.Ctx.Log.Verbo("block %s waiting for parent %s to be issued", blkID, parentID)
 		i.deps.Add(parentID)
 	}
@@ -566,7 +643,6 @@ func (t *Transitive) pushSample(blk snowman.Block) {
 	if err == nil && t.polls.Add(t.RequestID, vdrBag) {
 		vdrSet := ids.ShortSet{}
 		vdrSet.Add(vdrBag.List()...)
-
 		t.Sender.PushQuery(vdrSet, t.RequestID, blk.ID(), blk.Bytes())
 	} else if err != nil {
 		t.Ctx.Log.Error("query for %s was dropped due to an insufficient number of validators", blk.ID())
@@ -585,17 +661,23 @@ func (t *Transitive) deliver(blk snowman.Block) error {
 
 	// Make sure this block is valid
 	if err := blk.Verify(); err != nil {
-		t.Ctx.Log.Debug("block failed verification due to %s, dropping block", err)
-
+		delete(t.processing, blkID.Key()) // Unpin from memory
+		t.droppedCache.Put(blkID, blk)
 		// if verify fails, then all descendants are also invalid
 		t.blocked.Abandon(blkID)
 		t.numBlocked.Set(float64(t.pending.Len())) // Tracks performance statistics
+		t.numProcessing.Set(float64(len(t.processing)))
 		return t.errs.Err
 	}
 
 	t.Ctx.Log.Verbo("adding block to consensus: %s", blkID)
-	if err := t.Consensus.Add(blk); err != nil {
+	if rejected, err := t.Consensus.Add(blk); err != nil {
 		return err
+	} else if rejected {
+		t.decidedCache.Put(blkID, nil)
+		t.droppedCache.Evict(blkID)       // Remove from dropped cache, if it was in there
+		delete(t.processing, blkID.Key()) // This block was rejected. Unpin from memory.
+		t.numProcessing.Set(float64(len(t.processing)))
 	}
 
 	// Add all the oracle blocks if they exist. We call verify on all the blocks
@@ -611,11 +693,17 @@ func (t *Transitive) deliver(blk snowman.Block) error {
 		}
 		for _, blk := range options {
 			if err := blk.Verify(); err != nil {
-				t.Ctx.Log.Debug("block failed verification due to %s, dropping block", err)
+				t.Ctx.Log.Debug("block %s failed verification due to %s, dropping block", blk.ID(), err)
 				dropped = append(dropped, blk)
 			} else {
-				if err := t.Consensus.Add(blk); err != nil {
+				rejected, err := t.Consensus.Add(blk)
+				if err != nil {
 					return err
+				}
+				if !rejected {
+					t.processing[blkID.Key()] = blk
+					t.droppedCache.Evict(blkID)
+					t.numProcessing.Set(float64(len(t.processing))) // Record metric
 				}
 				added = append(added, blk)
 			}
@@ -653,4 +741,18 @@ func (t *Transitive) deliver(blk snowman.Block) error {
 // IsBootstrapped returns true iff this chain is done bootstrapping
 func (t *Transitive) IsBootstrapped() bool {
 	return t.Ctx.IsBootstrapped()
+}
+
+// GetBlock gets a block by its ID
+func (t *Transitive) GetBlock(id ids.ID) (snowman.Block, error) {
+	// Check the processing set
+	if block, ok := t.processing[id.Key()]; ok {
+		return block, nil
+	}
+	// Check the cache of recently dropped blocks
+	if block, ok := t.droppedCache.Get(id); ok {
+		return block.(snowman.Block), nil
+	}
+	// Not processing. Check the database.
+	return t.VM.GetBlock(id)
 }

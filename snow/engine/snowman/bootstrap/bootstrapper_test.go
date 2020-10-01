@@ -37,6 +37,7 @@ func newConfig(t *testing.T) (Config, ids.ShortID, *common.SenderTest, *block.Te
 
 	sender.T = t
 	vm.T = t
+	vm.SaveBlockF = func(snowman.Block) error { return nil }
 
 	sender.Default(true)
 	vm.Default(true)

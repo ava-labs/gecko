@@ -43,6 +43,9 @@ type ChainVM interface {
 	// If the block does not exist, then an error should be returned.
 	GetBlock(ids.ID) (snowman.Block, error)
 
+	// Save a block to the database
+	SaveBlock(snowman.Block) error
+
 	// Notify the VM of the currently preferred block.
 	//
 	// This should always be a block that has no children known to consensus.

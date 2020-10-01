@@ -21,6 +21,7 @@ type parser struct {
 	log                     logging.Logger
 	numAccepted, numDropped prometheus.Counter
 	vm                      block.ChainVM
+	bs                      *Bootstrapper
 }
 
 func (p *parser) Parse(blkBytes []byte) (queue.Job, error) {
@@ -28,11 +29,13 @@ func (p *parser) Parse(blkBytes []byte) (queue.Job, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.bs.blockCache.Put(blk.ID(), blk)
 	return &blockJob{
 		log:         p.log,
 		numAccepted: p.numAccepted,
 		numDropped:  p.numDropped,
 		blk:         blk,
+		bs:          p.bs,
 	}, nil
 }
 
@@ -40,13 +43,15 @@ type blockJob struct {
 	log                     logging.Logger
 	numAccepted, numDropped prometheus.Counter
 	blk                     snowman.Block
+	bs                      *Bootstrapper
 }
 
 func (b *blockJob) ID() ids.ID { return b.blk.ID() }
 func (b *blockJob) MissingDependencies() (ids.Set, error) {
 	missing := ids.Set{}
-	if parent := b.blk.Parent(); parent.Status() != choices.Accepted {
-		missing.Add(parent.ID())
+	parentID := b.blk.Parent()
+	if parent, err := b.bs.GetBlock(parentID); err != nil || parent.Status() != choices.Accepted { // Can't get parent block --> parent is not accepted
+		missing.Add(parentID)
 	}
 	return missing, nil
 }
@@ -76,6 +81,10 @@ func (b *blockJob) Execute() error {
 				b.blk.ID(), err)
 			return fmt.Errorf("failed to accept block in bootstrapping: %w", err)
 		}
+		if err := b.bs.VM.SaveBlock(b.blk); err != nil {
+			return fmt.Errorf("couldn't save block %s: %w", b.blk.ID(), err)
+		}
+
 	}
 	return nil
 }

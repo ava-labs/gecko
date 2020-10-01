@@ -36,7 +36,7 @@ func (b *Block) Verify() error {
 	}
 
 	// Get [b]'s parent
-	parent, ok := b.Parent().(*Block)
+	parent, ok := b.ParentBlock().(*Block)
 	if !ok {
 		return errDatabaseGet
 	}
@@ -49,9 +49,5 @@ func (b *Block) Verify() error {
 		return errTimestampTooLate
 	}
 
-	// Persist the block
-	if err := b.VM.SaveBlock(b.VM.DB, b); err != nil {
-		return errDatabaseSave
-	}
-	return b.VM.DB.Commit()
+	return nil
 }

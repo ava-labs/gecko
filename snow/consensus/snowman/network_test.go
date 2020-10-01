@@ -65,7 +65,7 @@ func (n *Network) AddNode(sm Consensus) {
 	for _, blk := range n.colors {
 		myDep, found := deps[blk.ParentV.ID().Key()]
 		if !found {
-			myDep = blk.Parent()
+			myDep = blk.ParentV
 		}
 		myVtx := &TestBlock{
 			TestDecidable: choices.TestDecidable{

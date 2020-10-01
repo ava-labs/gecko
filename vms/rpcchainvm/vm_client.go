@@ -20,7 +20,6 @@ import (
 	"github.com/ava-labs/avalanchego/snow/consensus/snowman"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
-	"github.com/ava-labs/avalanchego/vms/components/missing"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/galiaslookup"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/galiaslookup/galiaslookupproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp"
@@ -289,6 +288,14 @@ func (vm *VMClient) ParseBlock(bytes []byte) (snowman.Block, error) {
 	}, nil
 }
 
+// SaveBlock persists [blk] in storage.
+func (vm *VMClient) SaveBlock(blk snowman.Block) error {
+	_, err := vm.client.SaveBlock(context.Background(), &vmproto.SaveBlockRequest{
+		Bytes: blk.Bytes(),
+	})
+	return err
+}
+
 // GetBlock ...
 func (vm *VMClient) GetBlock(id ids.ID) (snowman.Block, error) {
 	if blk, cached := vm.blks[id.Key()]; cached {
@@ -369,11 +376,8 @@ func (b *BlockClient) Reject() error {
 func (b *BlockClient) Status() choices.Status { return b.status }
 
 // Parent ...
-func (b *BlockClient) Parent() snowman.Block {
-	if parent, err := b.vm.GetBlock(b.parentID); err == nil {
-		return parent
-	}
-	return &missing.Block{BlkID: b.parentID}
+func (b *BlockClient) Parent() ids.ID {
+	return b.parentID
 }
 
 // Verify ...

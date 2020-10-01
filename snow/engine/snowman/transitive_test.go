@@ -91,7 +91,7 @@ func TestEngineShutdown(t *testing.T) {
 }
 
 func TestEngineAdd(t *testing.T) {
-	vdr, _, sender, vm, te, _ := setup(t)
+	vdr, _, sender, vm, te, gBlk := setup(t)
 
 	if !te.Ctx.ChainID.Equals(ids.Empty) {
 		t.Fatalf("Wrong chain ID")
@@ -122,7 +122,7 @@ func TestEngineAdd(t *testing.T) {
 		if !vdr.Equals(inVdr) {
 			t.Fatalf("Asking wrong validator for block")
 		}
-		if !blkID.Equals(blk.Parent().ID()) {
+		if !blkID.Equals(blk.Parent()) {
 			t.Fatalf("Asking for wrong block")
 		}
 	}
@@ -132,6 +132,16 @@ func TestEngineAdd(t *testing.T) {
 			t.Fatalf("Wrong bytes")
 		}
 		return blk, nil
+	}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(blk.ID()) || blkID.Equals(parent.ID()):
+			return nil, errors.New("blk isn't accepted")
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		}
+		t.Fatalf("unexpectedly asked to get block %s", blkID)
+		return nil, errors.New("")
 	}
 
 	te.Put(vdr, 0, blk.ID(), blk.Bytes())
@@ -148,7 +158,7 @@ func TestEngineAdd(t *testing.T) {
 
 	vm.ParseBlockF = func(b []byte) (snowman.Block, error) { return nil, errUnknownBytes }
 
-	te.Put(vdr, *reqID, blk.Parent().ID(), nil)
+	te.Put(vdr, *reqID, blk.Parent(), nil)
 
 	vm.ParseBlockF = nil
 
@@ -172,28 +182,25 @@ func TestEngineQuery(t *testing.T) {
 
 	blocked := new(bool)
 	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
-		if *blocked {
-			t.Fatalf("Sent multiple requests")
-		}
 		*blocked = true
-		if !blkID.Equals(blk.ID()) {
-			t.Fatalf("Wrong block requested")
+		if blkID.Equals(gBlk.ID()) {
+			return gBlk, nil
+		} else if blkID.Equals(blk.ID()) {
+			return nil, errUnknownBlock
 		}
+		t.Fatalf("Wrong block requested")
 		return nil, errUnknownBlock
 	}
 
 	asked := new(bool)
 	getRequestID := new(uint32)
 	sender.GetF = func(inVdr ids.ShortID, requestID uint32, blkID ids.ID) {
-		if *asked {
-			t.Fatalf("Asked multiple times")
-		}
 		*asked = true
 		*getRequestID = requestID
 		if !vdr.Equals(inVdr) {
 			t.Fatalf("Asking wrong validator for block")
 		}
-		if !blk.ID().Equals(blkID) {
+		if !(blk.ID().Equals(blkID) || gBlk.ID().Equals(blkID)) {
 			t.Fatalf("Asking for wrong block")
 		}
 	}
@@ -270,7 +277,7 @@ func TestEngineQuery(t *testing.T) {
 	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
 		switch {
 		case blkID.Equals(blk.ID()):
-			return blk, nil
+			return nil, errUnknownBlock
 		case blkID.Equals(blk1.ID()):
 			return nil, errUnknownBlock
 		}
@@ -292,6 +299,13 @@ func TestEngineQuery(t *testing.T) {
 			t.Fatalf("Asking for wrong block")
 		}
 	}
+	vm.SaveBlockF = func(b snowman.Block) error {
+		if !b.ID().Equals(blk1.ID()) && !b.ID().Equals(blk.ID()) {
+			t.Fatal("should have asked to save blk or blk1")
+		}
+		return nil
+	}
+
 	blkSet := ids.Set{}
 	blkSet.Add(blk1.ID())
 	te.Chits(vdr, *queryRequestID, blkSet)
@@ -439,6 +453,16 @@ func TestEngineMultipleQuery(t *testing.T) {
 			t.Fatalf("Asking for wrong block")
 		}
 	}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(blk0.ID()):
+			return nil, errors.New("")
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		}
+		t.Fatalf("Wrong block requested")
+		panic("Should have failed")
+	}
 
 	te.issue(blk0)
 
@@ -457,7 +481,7 @@ func TestEngineMultipleQuery(t *testing.T) {
 		case id.Equals(gBlk.ID()):
 			return gBlk, nil
 		case id.Equals(blk0.ID()):
-			return blk0, nil
+			return nil, errUnknownBlock
 		case id.Equals(blk1.ID()):
 			return nil, errUnknownBlock
 		}
@@ -480,6 +504,14 @@ func TestEngineMultipleQuery(t *testing.T) {
 			t.Fatalf("Asking for wrong block")
 		}
 	}
+	vm.SaveBlockF = func(b snowman.Block) error {
+		if b.ID().Equals(blk1.ID()) {
+			return nil
+		}
+		t.Fatal("should have asked to save blk1")
+		return errUnknownBlock
+	}
+
 	blkSet := ids.Set{}
 	blkSet.Add(blk1.ID())
 	te.Chits(vdr0, *queryRequestID, blkSet)
@@ -533,7 +565,7 @@ func TestEngineMultipleQuery(t *testing.T) {
 }
 
 func TestEngineBlockedIssue(t *testing.T) {
-	_, _, sender, _, te, gBlk := setup(t)
+	_, _, sender, vm, te, gBlk := setup(t)
 
 	sender.Default(false)
 
@@ -555,6 +587,17 @@ func TestEngineBlockedIssue(t *testing.T) {
 		HeightV: 2,
 		BytesV:  []byte{2},
 	}
+	sender.GetF = func(ids.ShortID, uint32, ids.ID) {}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		case blkID.Equals(blk1.ID()) || blkID.Equals(blk0.ID()):
+			return nil, errUnknownBlock
+		}
+		t.Fatalf("Wrong block requested")
+		panic("Should have failed")
+	}
 
 	te.issue(blk1)
 
@@ -567,7 +610,7 @@ func TestEngineBlockedIssue(t *testing.T) {
 }
 
 func TestEngineAbandonResponse(t *testing.T) {
-	vdr, _, sender, _, te, gBlk := setup(t)
+	vdr, _, sender, vm, te, gBlk := setup(t)
 
 	sender.Default(false)
 
@@ -579,6 +622,16 @@ func TestEngineAbandonResponse(t *testing.T) {
 		ParentV: gBlk,
 		HeightV: 1,
 		BytesV:  []byte{1},
+	}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		case blkID.Equals(blk.ID()):
+			return nil, errUnknownBlock
+		}
+		t.Fatalf("Wrong block requested")
+		panic("Should have failed")
 	}
 
 	te.issue(blk)
@@ -647,7 +700,9 @@ func TestEnginePushQuery(t *testing.T) {
 
 	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
 		if id.Equals(blk.ID()) {
-			return blk, nil
+			return nil, errUnknownBlock
+		} else if id.Equals(gBlk.ID()) {
+			return gBlk, nil
 		}
 		t.Fatal(errUnknownBytes)
 		panic(errUnknownBytes)
@@ -713,6 +768,17 @@ func TestEngineBuildBlock(t *testing.T) {
 		ParentV: gBlk,
 		HeightV: 1,
 		BytesV:  []byte{1},
+	}
+
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		case blkID.Equals(blk.ID()):
+			return nil, errors.New("")
+		}
+		t.Fatalf("Wrong block requested")
+		panic("Should have failed")
 	}
 
 	queried := new(bool)
@@ -992,6 +1058,16 @@ func TestEngineAbandonChit(t *testing.T) {
 		HeightV: 1,
 		BytesV:  []byte{1},
 	}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		case blkID.Equals(blk.ID()):
+			return nil, errors.New("")
+		}
+		t.Fatalf("Wrong block requested")
+		panic("Should have failed")
+	}
 
 	sender.CantPushQuery = false
 
@@ -1060,21 +1136,24 @@ func TestEngineBlockingChitRequest(t *testing.T) {
 		HeightV: 3,
 		BytesV:  []byte{3},
 	}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(blockingBlk.ID()) || blkID.Equals(parentBlk.ID()) || blkID.Equals(missingBlk.ID()):
+			return nil, errors.New("")
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		default:
+			t.Fatalf("Loaded unknown block")
+			panic("Should have failed")
+		}
+	}
+	sender.GetF = func(ids.ShortID, uint32, ids.ID) {}
 
 	te.issue(parentBlk)
 
 	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
 		switch {
 		case bytes.Equal(b, blockingBlk.Bytes()):
-			return blockingBlk, nil
-		default:
-			t.Fatalf("Loaded unknown block")
-			panic("Should have failed")
-		}
-	}
-	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
-		switch {
-		case blkID.Equals(blockingBlk.ID()):
 			return blockingBlk, nil
 		default:
 			t.Fatalf("Loaded unknown block")
@@ -1131,6 +1210,18 @@ func TestEngineBlockingChitResponse(t *testing.T) {
 		HeightV: 2,
 		BytesV:  []byte{3},
 	}
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		switch {
+		case blkID.Equals(blockingBlk.ID()) || blkID.Equals(issuedBlk.ID()) || blkID.Equals(missingBlk.ID()):
+			return nil, errors.New("")
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
+		default:
+			t.Fatalf("Loaded unknown block")
+			panic("Should have failed")
+		}
+	}
+	sender.GetF = func(ids.ShortID, uint32, ids.ID) {}
 
 	te.issue(blockingBlk)
 
@@ -1149,15 +1240,6 @@ func TestEngineBlockingChitResponse(t *testing.T) {
 
 	te.issue(issuedBlk)
 
-	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
-		switch {
-		case blkID.Equals(blockingBlk.ID()):
-			return blockingBlk, nil
-		default:
-			t.Fatalf("Loaded unknown block")
-			panic("Should have failed")
-		}
-	}
 	blockingBlkIDSet := ids.Set{}
 	blockingBlkIDSet.Add(blockingBlk.ID())
 	te.Chits(vdr, *queryRequestID, blockingBlkIDSet)
@@ -1244,28 +1326,51 @@ func TestEngineUndeclaredDependencyDeadlock(t *testing.T) {
 		BytesV:  []byte{2},
 	}
 
-	validBlkID := validBlk.ID()
 	invalidBlkID := invalidBlk.ID()
 
 	reqID := new(uint32)
 	sender.PushQueryF = func(_ ids.ShortSet, requestID uint32, _ ids.ID, _ []byte) {
 		*reqID = requestID
 	}
+	sender.PullQueryF = func(_ ids.ShortSet, requestID uint32, _ ids.ID) {}
 
-	te.issue(validBlk)
-
-	sender.PushQueryF = nil
-
-	te.issue(invalidBlk)
-
-	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
 		switch {
-		case blkID.Equals(validBlkID):
+		case bytes.Equal(b, validBlk.Bytes()):
 			return validBlk, nil
-		case blkID.Equals(invalidBlkID):
+		case bytes.Equal(b, invalidBlk.Bytes()):
 			return invalidBlk, nil
 		}
 		return nil, errUnknownBlock
+	}
+	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
+		switch {
+		case id.Equals(validBlk.ID()):
+			return nil, errors.New("")
+		case id.Equals(invalidBlk.ID()):
+			return nil, errors.New("")
+		case id.Equals(gBlk.ID()):
+			return gBlk, nil
+		}
+		t.Fatal("asked to get unexpected block")
+		return nil, errUnknownBlock
+	}
+	sender.ChitsF = func(ids.ShortID, uint32, ids.Set) {}
+
+	te.PushQuery(vdr, 0, validBlk.ID(), validBlk.Bytes())
+
+	sender.PushQueryF = nil
+
+	te.PushQuery(vdr, 1, invalidBlk.ID(), invalidBlk.Bytes())
+
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		return nil, errUnknownBlock
+	}
+	vm.SaveBlockF = func(b snowman.Block) error {
+		if !b.ID().Equals(validBlk.ID()) {
+			t.Fatal("should have saved validBlk")
+		}
+		return nil
 	}
 
 	votes := ids.Set{}
@@ -1355,9 +1460,12 @@ func TestEngineInvalidBlockIgnoredFromUnexpectedPeer(t *testing.T) {
 		}
 
 		switch {
-		case blkID.Equals(pendingBlk.ID()):
-			return pendingBlk, nil
+		case blkID.Equals(pendingBlk.ID()) || blkID.Equals(missingBlk.ID()):
+			return nil, errors.New("")
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
 		}
+		t.Fatal("GetBlock called with wrong block")
 		return nil, errUnknownBlock
 	}
 
@@ -1381,17 +1489,6 @@ func TestEngineInvalidBlockIgnoredFromUnexpectedPeer(t *testing.T) {
 		switch {
 		case bytes.Equal(b, missingBlk.Bytes()):
 			*parsed = true
-			return missingBlk, nil
-		}
-		return nil, errUnknownBlock
-	}
-	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
-		if !*parsed {
-			return nil, errUnknownBlock
-		}
-
-		switch {
-		case blkID.Equals(missingBlk.ID()):
 			return missingBlk, nil
 		}
 		return nil, errUnknownBlock
@@ -1446,14 +1543,6 @@ func TestEnginePushQueryRequestIDConflict(t *testing.T) {
 	}
 
 	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
-		if !*parsed {
-			return nil, errUnknownBlock
-		}
-
-		switch {
-		case blkID.Equals(pendingBlk.ID()):
-			return pendingBlk, nil
-		}
 		return nil, errUnknownBlock
 	}
 
@@ -1492,6 +1581,8 @@ func TestEnginePushQueryRequestIDConflict(t *testing.T) {
 		switch {
 		case blkID.Equals(missingBlk.ID()):
 			return missingBlk, nil
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
 		}
 		return nil, errUnknownBlock
 	}
@@ -1587,8 +1678,11 @@ func TestEngineAggressivePolling(t *testing.T) {
 
 		switch {
 		case blkID.Equals(pendingBlk.ID()):
-			return pendingBlk, nil
+			return nil, errors.New("")
+		case blkID.Equals(gBlk.ID()):
+			return gBlk, nil
 		}
+		t.Fatal("called GetBlock for wrong block ID")
 		return nil, errUnknownBlock
 	}
 
@@ -1680,6 +1774,14 @@ func TestEngineDoubleChit(t *testing.T) {
 		HeightV: 1,
 		BytesV:  []byte{1},
 	}
+	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
+		switch {
+		case bytes.Equal(b, blk.Bytes()):
+			return blk, nil
+		}
+		t.Fatalf("asked to parse unknown block")
+		panic("Should have errored")
+	}
 
 	queried := new(bool)
 	queryRequestID := new(uint32)
@@ -1698,15 +1800,16 @@ func TestEngineDoubleChit(t *testing.T) {
 			t.Fatalf("Asking for wrong block")
 		}
 	}
+	sender.ChitsF = func(ids.ShortID, uint32, ids.Set) {}
 
-	te.issue(blk)
+	te.PushQuery(vdr0, 0, blk.ID(), blk.Bytes())
 
 	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
 		switch {
 		case id.Equals(gBlk.ID()):
 			return gBlk, nil
 		case id.Equals(blk.ID()):
-			return blk, nil
+			return nil, errUnknownBlock
 		}
 		t.Fatalf("Unknown block")
 		panic("Should have errored")
@@ -1731,9 +1834,386 @@ func TestEngineDoubleChit(t *testing.T) {
 		t.Fatalf("Wrong status: %s ; expected: %s", status, choices.Processing)
 	}
 
+	vm.SaveBlockF = func(b snowman.Block) error {
+		if b.ID().Equals(blk.ID()) {
+			return nil
+		}
+		t.Fatal("should have saved blk")
+		return errUnknownBlock
+	}
+
 	te.Chits(vdr1, *queryRequestID, blkSet)
 
 	if status := blk.Status(); status != choices.Accepted {
 		t.Fatalf("Wrong status: %s ; expected: %s", status, choices.Accepted)
+	}
+}
+
+// test that processing blocks are properly pinned/unpinned in memory
+func TestPinnedMemory(t *testing.T) {
+	// Do setup
+	config := DefaultConfig()
+
+	config.Params.ConcurrentRepolls = 0
+
+	vdr := validators.GenerateRandomValidator(1)
+
+	vals := validators.NewSet()
+	config.Validators = vals
+
+	vals.AddWeight(vdr.ID(), 1)
+
+	sender := &common.SenderTest{}
+	sender.T = t
+	config.Sender = sender
+
+	sender.Default(true)
+
+	vm := &block.TestVM{}
+	vm.T = t
+	config.VM = vm
+
+	vm.Default(true)
+	vm.CantSetPreference = false
+
+	// Genesis block
+	gBlk := &snowman.TestBlock{TestDecidable: choices.TestDecidable{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Accepted,
+	}}
+
+	blk := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentV: gBlk,
+		HeightV: 1,
+		BytesV:  []byte{1},
+	}
+
+	// The VM should return that it hasn't accepted [blk]
+	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
+		switch {
+		case id.Equals(gBlk.ID()):
+			return gBlk, nil
+		case id.Equals(blk.ID()):
+			return nil, errors.New("unknown block")
+		}
+		t.Fatalf("Unknown block")
+		panic("Should have errored")
+	}
+	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
+		switch {
+		case bytes.Equal(b, blk.Bytes()):
+			return blk, nil
+		}
+		return nil, errUnknownBlock
+	}
+
+	// Key: Block ID
+	// Value: ID of request for push query containing that block ID
+	pushQueryIDs := map[[32]byte]uint32{}
+	sender.PushQueryF = func(vdrID ids.ShortSet, requestID uint32, blkID ids.ID, blk []byte) {
+		pushQueryIDs[blkID.Key()] = requestID
+	}
+
+	sender.ChitsF = func(ids.ShortID, uint32, ids.Set) {}
+
+	vm.LastAcceptedF = func() ids.ID { return gBlk.ID() }
+	sender.CantGetAcceptedFrontier = false
+
+	te := &Transitive{}
+	te.Initialize(config)
+	te.Initialize(config)
+	te.finishBootstrapping()
+	te.Ctx.Bootstrapped()
+
+	// First, test the simple case where there's one processing block with no conflicts and it's accepted
+	// Put a block
+	if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+	te.Put(vdr.ID(), 0, blk.ID(), blk.Bytes())
+	if len(te.processing) != 1 {
+		t.Fatalf("processing should have %d elements but has %d", 1, len(te.processing))
+	}
+	// The VM should return that it has accepted [blk]
+	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
+		switch {
+		case id.Equals(gBlk.ID()):
+			return gBlk, nil
+		case id.Equals(blk.ID()):
+			return nil, errUnknownBlock
+		}
+		t.Fatalf("asked VM for unexpected block")
+		panic("Should have errored")
+	}
+	vm.SaveBlockF = func(b snowman.Block) error {
+		bID := b.ID()
+		switch {
+		case bID.Equals(blk.ID()):
+			return nil
+		}
+		t.Fatal("asked to save wrong block")
+		return errUnknownBlock
+	}
+
+	// Record chits
+	votes := ids.Set{}
+	votes.Add(blk.ID())
+	reqID, ok := pushQueryIDs[blk.ID().Key()]
+	if !ok {
+		t.Fatal("didn't ask for blk")
+	}
+	te.Chits(vdr.ID(), reqID, votes)
+	if blk.Status() != choices.Accepted {
+		t.Fatal("should be accepted")
+	} else if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+
+	// Put the same block again
+	te.Put(vdr.ID(), 1, blk.ID(), blk.Bytes())
+	if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+	// PushQuery for the same block
+	te.PushQuery(vdr.ID(), 2, blk.ID(), blk.Bytes())
+	if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+
+	// Current tree:
+	//       G
+	//       |
+	//      blk
+
+	// Second, test the case where there are conflicting blocks and blocks with children
+
+	// Add three blocks.
+	blk2 := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentV: blk,
+		HeightV: 2,
+		BytesV:  []byte{2},
+	}
+	blk3 := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentV: blk2,
+		HeightV: 3,
+		BytesV:  []byte{3},
+	}
+	blk4 := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentV: blk,
+		HeightV: 2,
+		BytesV:  []byte{4},
+	}
+	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
+		switch {
+		case bytes.Equal(b, blk2.Bytes()):
+			return blk2, nil
+		case bytes.Equal(b, blk3.Bytes()):
+			return blk3, nil
+		case bytes.Equal(b, blk4.Bytes()):
+			return blk4, nil
+		default:
+			t.Fatal("asked for unexpected block")
+		}
+		return nil, errUnknownBlock
+	}
+
+	// Issue push queries for the new blocks
+	te.PushQuery(vdr.ID(), 3, blk2.ID(), blk2.Bytes())
+	if len(te.processing) != 1 {
+		t.Fatalf("processing should have %d elements but has %d", 1, len(te.processing))
+	}
+	te.PushQuery(vdr.ID(), 4, blk3.ID(), blk3.Bytes())
+	if len(te.processing) != 2 {
+		t.Fatalf("processing should have %d elements but has %d", 2, len(te.processing))
+	}
+	te.PushQuery(vdr.ID(), 5, blk4.ID(), blk4.Bytes())
+	if len(te.processing) != 3 {
+		t.Fatalf("processing should have %d elements but has %d", 3, len(te.processing))
+	}
+
+	// Current tree:
+	//       G
+	//       |
+	//      blk
+	//     /   \
+	//   blk2   blk4
+	//    |
+	//   blk3
+
+	// Send 2 chits for blk3. Note that since blk2 conflicts with blk4,
+	// we need 2 consecutive polls because betaRouge = 2
+	votes.Clear()
+	votes.Add(blk3.ID())
+	// we could use any two push query request IDs here. We use blk2 and blk3's
+	reqID, ok = pushQueryIDs[blk3.ID().Key()]
+	if !ok {
+		t.Fatal("should have sent push query for blk3")
+	}
+	vm.SaveBlockF = func(b snowman.Block) error {
+		bID := b.ID()
+		switch {
+		case bID.Equals(blk2.ID()):
+			return nil
+		case bID.Equals(blk3.ID()):
+			return nil
+		}
+		t.Fatal("asked to save wrong block")
+		return errUnknownBlock
+	}
+	te.Chits(vdr.ID(), reqID, votes)
+	reqID, ok = pushQueryIDs[blk2.ID().Key()]
+	if !ok {
+		t.Fatal("should have sent push query for blk2")
+	}
+	te.Chits(vdr.ID(), reqID, votes)
+	// Should have accepted blk2 and blk3, rejected blk4
+	if blk2.Status() != choices.Accepted {
+		t.Fatal("should have accepted blk2")
+	} else if blk3.Status() != choices.Accepted {
+		t.Fatal("should have accepted blk3")
+	} else if blk4.Status() != choices.Rejected {
+		t.Fatal("should have rejected blk4")
+	} else if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+
+	// Push queries for these blocks should not add elements to processing
+	// PushQuery for the same block
+	te.PushQuery(vdr.ID(), 6, blk2.ID(), blk2.Bytes())
+	te.PushQuery(vdr.ID(), 7, blk3.ID(), blk3.Bytes())
+	te.PushQuery(vdr.ID(), 8, blk3.ID(), blk4.Bytes())
+	if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+
+	// Third, test the case where a block is immediately rejected because a parent is rejected
+	blk5 := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentV: blk4,
+		HeightV: 3,
+		BytesV:  []byte{5},
+	}
+	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
+		switch {
+		case bytes.Equal(b, blk5.Bytes()):
+			return blk5, nil
+		default:
+			t.Fatal("asked for unexpected block")
+		}
+		return nil, errUnknownBlock
+	}
+	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
+		switch {
+		case id.Equals(blk5.ID()):
+			return nil, errors.New("unknown block")
+		case id.Equals(blk4.ID()):
+			return nil, errors.New("unknown block")
+		}
+		t.Fatalf("asked VM for unexpected block")
+		panic("Should have errored")
+	}
+	te.PushQuery(vdr.ID(), 9, blk5.ID(), blk5.Bytes()) // Will ask for blk4 since we no longer hold it since it's rejected
+	if blk5.Status() != choices.Rejected {
+		t.Fatal("should be rejected")
+	} else if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
+	}
+
+	// Fourth, test the case where a block is dropped
+	blk6 := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		ParentV: blk3,
+		HeightV: 4,
+		BytesV:  []byte{6},
+		VerifyV: errors.New("fail on verification"),
+	}
+	blk7 := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentV: blk6,
+		HeightV: 5,
+		BytesV:  []byte{7},
+	}
+
+	vm.ParseBlockF = func(b []byte) (snowman.Block, error) {
+		switch {
+		case bytes.Equal(b, blk6.Bytes()):
+			return blk6, nil
+		case bytes.Equal(b, blk7.Bytes()):
+			return blk7, nil
+		default:
+			t.Fatal("asked for unexpected block")
+		}
+		return nil, errUnknownBlock
+	}
+	vm.GetBlockF = func(id ids.ID) (snowman.Block, error) {
+		switch {
+		case id.Equals(blk3.ID()):
+			return blk3, nil
+		case id.Equals(blk6.ID()):
+			return nil, errors.New("unknown block")
+		case id.Equals(blk7.ID()):
+			return nil, errors.New("unknown block")
+		}
+		t.Fatalf("asked VM for unexpected block")
+		panic("Should have errored")
+	}
+	reqID = 0
+	requested := false
+	sender.GetF = func(vdr ids.ShortID, requestID uint32, blkID ids.ID) {
+		if !blkID.Equals(blk6.ID()) {
+			t.Fatal("should've asked for blk6")
+		}
+		requested = true
+		reqID = requestID
+	}
+	te.PushQuery(vdr.ID(), 10, blk7.ID(), blk7.Bytes()) // Will block on blk6
+	if !requested {
+		t.Fatal("should have requested blk6")
+	} else if len(te.processing) != 1 {
+		t.Fatalf("processing should have %d elements but has %d", 1, len(te.processing))
+	}
+	te.Put(vdr.ID(), reqID, blk6.ID(), blk6.Bytes())
+
+	// Current tree:
+	//       G
+	//       |
+	//      blk
+	//     /   \
+	//   blk2   blk4 (rej.)
+	//    |
+	//   blk3
+	//    |
+	//   blk6
+	//    |
+	//   blk7
+
+	// blk7 becomes unblocked. blk6 fails verification, so blk7 gets dropped.
+	if len(te.processing) != 0 {
+		t.Fatalf("processing should have %d elements but has %d", 0, len(te.processing))
 	}
 }

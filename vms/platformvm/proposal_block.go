@@ -171,16 +171,6 @@ func (pb *ProposalBlock) Options() ([2]snowman.Block, error) {
 		return [2]snowman.Block{}, err
 	}
 
-	if err := pb.vm.State.PutBlock(pb.vm.DB, commit); err != nil {
-		return [2]snowman.Block{}, err
-	}
-	if err := pb.vm.State.PutBlock(pb.vm.DB, abort); err != nil {
-		return [2]snowman.Block{}, err
-	}
-	if err := pb.vm.DB.Commit(); err != nil {
-		return [2]snowman.Block{}, err
-	}
-
 	tx, ok := pb.Tx.UnsignedTx.(UnsignedProposalTx)
 	if !ok {
 		return [2]snowman.Block{}, errWrongTxType

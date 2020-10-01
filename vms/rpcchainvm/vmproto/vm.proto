@@ -99,6 +99,12 @@ message BlockRejectRequest {
 
 message BlockRejectResponse {}
 
+message SaveBlockRequest {
+    bytes bytes = 1; // The byte representation of the block to be saved
+}
+
+message SaveBlockResponse {}
+
 service VM {
     rpc Initialize(InitializeRequest) returns (InitializeResponse);
     rpc Bootstrapping(BootstrappingRequest) returns (BootstrappingResponse);
@@ -109,8 +115,10 @@ service VM {
     rpc ParseBlock(ParseBlockRequest) returns (ParseBlockResponse);
     rpc GetBlock(GetBlockRequest) returns (GetBlockResponse);
     rpc SetPreference(SetPreferenceRequest) returns (SetPreferenceResponse);
+    rpc SaveBlock(SaveBlockRequest) returns (SaveBlockResponse);
 
     rpc BlockVerify(BlockVerifyRequest) returns (BlockVerifyResponse);
     rpc BlockAccept(BlockAcceptRequest) returns (BlockAcceptResponse);
     rpc BlockReject(BlockRejectRequest) returns (BlockRejectResponse);
+
 }

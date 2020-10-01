@@ -72,7 +72,7 @@ func (vm *VM) Initialize(
 			return err
 		}
 
-		if err := vm.SaveBlock(vm.DB, genesisBlock); err != nil {
+		if err := vm.SaveBlock(genesisBlock); err != nil {
 			vm.Ctx.Log.Error("error while saving genesis block: %v", err)
 			return err
 		}

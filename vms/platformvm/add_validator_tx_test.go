@@ -17,7 +17,7 @@ import (
 )
 
 func TestAddValidatorTxSyntacticVerify(t *testing.T) {
-	vm, _ := defaultVM()
+	vm, _ := defaultVM(t)
 	vm.Ctx.Lock.Lock()
 	defer func() {
 		vm.Shutdown()
@@ -356,7 +356,7 @@ func TestAddValidatorTxSyntacticVerify(t *testing.T) {
 
 // Test AddValidatorTx.SemanticVerify
 func TestAddValidatorTxSemanticVerify(t *testing.T) {
-	vm, _ := defaultVM()
+	vm, _ := defaultVM(t)
 	vm.Ctx.Lock.Lock()
 	defer func() {
 		vm.Shutdown()

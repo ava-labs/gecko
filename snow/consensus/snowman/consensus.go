@@ -19,8 +19,10 @@ type Consensus interface {
 	Parameters() snowball.Parameters
 
 	// Adds a new decision. Assumes the dependency has already been added.
-	// Returns if a critical error has occurred.
-	Add(Block) error
+	// Returns:
+	//   1) true if the block was rejected.
+	//   2) Whether a critical error has occured
+	Add(Block) (bool, error)
 
 	// Issued returns true if the block has been issued into consensus
 	Issued(Block) bool
@@ -30,8 +32,12 @@ type Consensus interface {
 	Preference() ids.ID
 
 	// RecordPoll collects the results of a network poll. Assumes all decisions
-	// have been previously added. Returns if a critical error has occurred.
-	RecordPoll(ids.Bag) error
+	// have been previously added.
+	// Returns:
+	//   1) IDs of accepted vertices, or the empty set if there are none
+	//   2) IDs of rejected vertices, or the empty set if there are none
+	//   3) Whether a critical error has occured
+	RecordPoll(ids.Bag) (ids.Set, ids.Set, error)
 
 	// Finalized returns true if all decisions that have been added have been
 	// finalized. Note, it is possible that after returning finalized, a new

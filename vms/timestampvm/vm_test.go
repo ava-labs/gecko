@@ -113,8 +113,11 @@ func TestHappyPath(t *testing.T) {
 	}
 	if err := snowmanBlock2.Verify(); err != nil {
 		t.Fatal(err)
+	} else if err := snowmanBlock2.Accept(); err != nil { // accept the block
+		t.Fatalf("couldn't accept block: %s", err)
+	} else if err := vm.SaveBlock(snowmanBlock2); err != nil { // normally the engine would do this
+		t.Fatalf("couldn't save block: %s", err)
 	}
-	snowmanBlock2.Accept() // accept the block
 	vm.SetPreference(snowmanBlock2.ID())
 
 	// Should be the block we just accepted
@@ -151,9 +154,12 @@ func TestHappyPath(t *testing.T) {
 	} else {
 		if err := block.Verify(); err != nil {
 			t.Fatal(err)
+		} else if err := block.Accept(); err != nil { // accept the block
+			t.Fatalf("couldn't accept block: %s", err)
+		} else if err := vm.SaveBlock(block); err != nil { // normally the engine would do this
+			t.Fatalf("couldn't save block: %s", err)
 		}
-		block.Accept() // accept the block
-		vm.SetPreference(block.ID())
+		vm.SetPreference(block.ID()) // normally the engine would do this
 	}
 
 	// The block we just accepted

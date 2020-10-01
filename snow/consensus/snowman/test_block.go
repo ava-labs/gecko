@@ -6,6 +6,7 @@ package snowman
 import (
 	"sort"
 
+	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 )
 
@@ -20,7 +21,7 @@ type TestBlock struct {
 }
 
 // Parent implements the Block interface
-func (b *TestBlock) Parent() Block { return b.ParentV }
+func (b *TestBlock) Parent() ids.ID { return b.ParentV.ID() }
 
 // Height returns the height of the block
 func (b *TestBlock) Height() uint64 { return b.HeightV }

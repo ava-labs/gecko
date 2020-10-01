@@ -15,6 +15,7 @@ var (
 	errBuildBlock = errors.New("unexpectedly called BuildBlock")
 	errParseBlock = errors.New("unexpectedly called ParseBlock")
 	errGetBlock   = errors.New("unexpectedly called GetBlock")
+	errSaveBlock  = errors.New("unexpectedly called SaveBlock")
 )
 
 // TestVM ...
@@ -25,13 +26,15 @@ type TestVM struct {
 	CantParseBlock,
 	CantGetBlock,
 	CantSetPreference,
-	CantLastAccepted bool
+	CantLastAccepted,
+	CantSaveBlock bool
 
 	BuildBlockF    func() (snowman.Block, error)
 	ParseBlockF    func([]byte) (snowman.Block, error)
 	GetBlockF      func(ids.ID) (snowman.Block, error)
 	SetPreferenceF func(ids.ID)
 	LastAcceptedF  func() ids.ID
+	SaveBlockF     func(snowman.Block) error
 }
 
 // Default ...
@@ -43,6 +46,7 @@ func (vm *TestVM) Default(cant bool) {
 	vm.CantGetBlock = cant
 	vm.CantSetPreference = cant
 	vm.CantLastAccepted = cant
+	vm.CantSaveBlock = cant
 }
 
 // BuildBlock ...
@@ -96,4 +100,15 @@ func (vm *TestVM) LastAccepted() ids.ID {
 		vm.T.Fatalf("Unexpectedly called LastAccepted")
 	}
 	return ids.ID{}
+}
+
+// SaveBlock ...
+func (vm *TestVM) SaveBlock(blk snowman.Block) error {
+	if vm.SaveBlockF != nil {
+		return vm.SaveBlockF(blk)
+	}
+	if vm.CantSaveBlock && vm.T != nil {
+		vm.T.Fatal(errSaveBlock)
+	}
+	return errSaveBlock
 }

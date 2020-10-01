@@ -123,7 +123,7 @@ func (s *state) Put(db database.Database, typeID uint64, key ids.ID, value inter
 	// Put the byte repr. of the value in the database
 	valueBytes, err := marshaller(value)
 	if err != nil {
-		return err
+		return fmt.Errorf("couldn't marshal value: %w", err)
 	}
 	return db.Put(uID.Bytes(), valueBytes)
 }

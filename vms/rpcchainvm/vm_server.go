@@ -5,6 +5,7 @@ package rpcchainvm
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc"
 
@@ -234,7 +235,7 @@ func (vm *VMServer) BuildBlock(_ context.Context, _ *vmproto.BuildBlockRequest) 
 	}
 	return &vmproto.BuildBlockResponse{
 		Id:       blk.ID().Bytes(),
-		ParentID: blk.Parent().ID().Bytes(),
+		ParentID: blk.Parent().Bytes(),
 		Bytes:    blk.Bytes(),
 	}, nil
 }
@@ -247,9 +248,19 @@ func (vm *VMServer) ParseBlock(_ context.Context, req *vmproto.ParseBlockRequest
 	}
 	return &vmproto.ParseBlockResponse{
 		Id:       blk.ID().Bytes(),
-		ParentID: blk.Parent().ID().Bytes(),
+		ParentID: blk.Parent().Bytes(),
 		Status:   uint32(blk.Status()),
 	}, nil
+}
+
+// SaveBlock persists a block to the database.
+// [req.Bytes] is the byte representation of the block to save.
+func (vm *VMServer) SaveBlock(_ context.Context, req *vmproto.SaveBlockRequest) (*vmproto.SaveBlockResponse, error) {
+	blk, err := vm.vm.ParseBlock(req.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't parse block: %w", err)
+	}
+	return &vmproto.SaveBlockResponse{}, vm.vm.SaveBlock(blk)
 }
 
 // GetBlock ...
@@ -263,7 +274,7 @@ func (vm *VMServer) GetBlock(_ context.Context, req *vmproto.GetBlockRequest) (*
 		return nil, err
 	}
 	return &vmproto.GetBlockResponse{
-		ParentID: blk.Parent().ID().Bytes(),
+		ParentID: blk.Parent().Bytes(),
 		Bytes:    blk.Bytes(),
 		Status:   uint32(blk.Status()),
 	}, nil

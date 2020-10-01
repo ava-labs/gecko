@@ -4,7 +4,11 @@
 package snowman
 
 import (
+	"fmt"
+
 	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowman"
+	"github.com/ava-labs/avalanchego/vms/components/missing"
 )
 
 // Voter records chits received from [vdr] once its dependencies are met.
@@ -49,10 +53,34 @@ func (v *voter) Update() {
 	results = v.bubbleVotes(results)
 
 	v.t.Ctx.Log.Debug("Finishing poll [%d] with:\n%s", v.requestID, &results)
-	if err := v.t.Consensus.RecordPoll(results); err != nil {
+	accepted, rejected, err := v.t.Consensus.RecordPoll(results)
+	if err != nil {
 		v.t.errs.Add(err)
 		return
 	}
+	// Unpin accepted and rejected blocks from memory
+	for _, acceptedID := range accepted.List() {
+		acceptedIDKey := acceptedID.Key()
+		v.t.decidedCache.Put(acceptedID, nil)
+		v.t.droppedCache.Evict(acceptedID)       // Remove from dropped cache, if it was in there
+		blk, ok := v.t.processing[acceptedIDKey] // The block we're accepting
+		if !ok {
+			err := fmt.Errorf("couldn't find accepted block %s in processing list. Block not saved to VM's database", acceptedID)
+			v.t.errs.Add(err)
+			return
+		} else if err := v.t.VM.SaveBlock(blk); err != nil { // Save accepted block in VM's database
+			err := fmt.Errorf("couldn't save block %s to VM's database: %s", acceptedID, err)
+			v.t.errs.Add(err)
+			return
+		}
+		delete(v.t.processing, acceptedID.Key())
+	}
+	for _, rejectedID := range rejected.List() {
+		v.t.decidedCache.Put(rejectedID, nil)
+		v.t.droppedCache.Evict(rejectedID) // Remove from dropped cache, if it was in there
+		delete(v.t.processing, rejectedID.Key())
+	}
+	v.t.numProcessing.Set(float64(len(v.t.processing)))
 
 	v.t.VM.SetPreference(v.t.Consensus.Preference())
 
@@ -65,17 +93,29 @@ func (v *voter) Update() {
 	v.t.repoll()
 }
 
+// We assume that the number of blocks that require votes to be bubbled
+// is sufficiently small to fit into the dropped cache.
 func (v *voter) bubbleVotes(votes ids.Bag) ids.Bag {
 	bubbledVotes := ids.Bag{}
+	var err error
 	for _, vote := range votes.List() {
 		count := votes.Count(vote)
-		blk, err := v.t.VM.GetBlock(vote)
-		if err != nil {
-			continue
+		blk, ok := v.t.processing[vote.Key()] // Check if the block is non-dropped and processing
+		if !ok {
+			blkIntf, ok := v.t.droppedCache.Get(vote) // See if the block was dropped
+			if ok {                                   // The block was dropped before but we still have it.
+				blk = blkIntf.(snowman.Block)
+			} else { // Couldn't find the block that this vote is for. Skip it.
+				continue
+			}
 		}
 
 		for blk.Status().Fetched() && !v.t.Consensus.Issued(blk) {
-			blk = blk.Parent()
+			blkID := blk.Parent()
+			blk, err = v.t.GetBlock(blkID)
+			if err != nil {
+				blk = &missing.Block{BlkID: blkID}
+			}
 		}
 
 		if !blk.Status().Decided() && v.t.Consensus.Issued(blk) {

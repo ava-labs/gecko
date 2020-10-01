@@ -4,6 +4,7 @@
 package snowman
 
 import (
+	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 )
 
@@ -20,11 +21,8 @@ import (
 type Block interface {
 	choices.Decidable
 
-	// Parent returns the block that this block points to.
-	//
-	// If the parent block is not known, a Block should be returned with the
-	// status Unknown.
-	Parent() Block
+	// Parent returns the ID of this block's parent.
+	Parent() ids.ID
 
 	// Verify that the state transition this block would make if accepted is
 	// valid. If the state transition is invalid, a non-nil error should be
