@@ -10,7 +10,7 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 )
@@ -212,7 +212,7 @@ func (vtx *uniqueVertex) Height() (uint64, error) {
 	return vtx.v.vtx.height, nil
 }
 
-func (vtx *uniqueVertex) Txs() ([]snowstorm.Tx, error) {
+func (vtx *uniqueVertex) Txs() ([]conflicts.Tx, error) {
 	vtx.refresh()
 
 	if vtx.v.vtx == nil {
@@ -220,7 +220,7 @@ func (vtx *uniqueVertex) Txs() ([]snowstorm.Tx, error) {
 	}
 
 	if len(vtx.v.vtx.txs) != len(vtx.v.txs) {
-		vtx.v.txs = make([]snowstorm.Tx, len(vtx.v.vtx.txs))
+		vtx.v.txs = make([]conflicts.Tx, len(vtx.v.vtx.txs))
 		for i, tx := range vtx.v.vtx.txs {
 			vtx.v.txs[i] = tx
 		}
@@ -277,5 +277,5 @@ type vertexState struct {
 	status choices.Status
 
 	parents []avalanche.Vertex
-	txs     []snowstorm.Tx
+	txs     []conflicts.Tx
 }

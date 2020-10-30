@@ -5,7 +5,7 @@ package avalanche
 
 import (
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 // TestVertex is a useful test vertex
@@ -16,7 +16,7 @@ type TestVertex struct {
 	ParentsErrV error
 	HeightV     uint64
 	HeightErrV  error
-	TxsV        []snowstorm.Tx
+	TxsV        []conflicts.Tx
 	TxsErrV     error
 	BytesV      []byte
 }
@@ -28,7 +28,7 @@ func (v *TestVertex) Parents() ([]Vertex, error) { return v.ParentsV, v.ParentsE
 func (v *TestVertex) Height() (uint64, error) { return v.HeightV, v.HeightErrV }
 
 // Txs implements the Vertex interface
-func (v *TestVertex) Txs() ([]snowstorm.Tx, error) { return v.TxsV, v.TxsErrV }
+func (v *TestVertex) Txs() ([]conflicts.Tx, error) { return v.TxsV, v.TxsErrV }
 
 // Bytes implements the Vertex interface
 func (v *TestVertex) Bytes() []byte { return v.BytesV }

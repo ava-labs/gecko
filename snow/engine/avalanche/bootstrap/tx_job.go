@@ -11,7 +11,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common/queue"
 	"github.com/ava-labs/avalanchego/utils/logging"
@@ -39,7 +39,7 @@ func (p *txParser) Parse(txBytes []byte) (queue.Job, error) {
 type txJob struct {
 	log                     logging.Logger
 	numAccepted, numDropped prometheus.Counter
-	tx                      snowstorm.Tx
+	tx                      conflicts.Tx
 }
 
 func (t *txJob) ID() ids.ID { return t.tx.ID() }

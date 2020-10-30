@@ -17,7 +17,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 	"github.com/ava-labs/avalanchego/snow/engine/common/queue"
@@ -334,7 +334,7 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 	txBytes0 := []byte{0}
 	txBytes1 := []byte{1}
 
-	tx0 := &snowstorm.TestTx{
+	tx0 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     txID0,
 			StatusV: choices.Processing,
@@ -344,12 +344,12 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
 	// Depends on tx0
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     txID1,
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{tx0},
+		DependenciesV: []conflicts.Tx{tx0},
 		BytesV:        txBytes1,
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
@@ -359,7 +359,7 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 
 	vtxBytes0 := []byte{2}
 	vtxBytes1 := []byte{3}
-	vm.ParseTxF = func(b []byte) (snowstorm.Tx, error) {
+	vm.ParseTxF = func(b []byte) (conflicts.Tx, error) {
 		switch {
 		case bytes.Equal(b, txBytes0):
 			return tx0, nil
@@ -376,7 +376,7 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 			StatusV: choices.Unknown,
 		},
 		HeightV: 0,
-		TxsV:    []snowstorm.Tx{tx1},
+		TxsV:    []conflicts.Tx{tx1},
 		BytesV:  vtxBytes0,
 	}
 	vtx1 := &avalanche.TestVertex{
@@ -386,7 +386,7 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0}, // Depends on vtx0
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 		BytesV:   vtxBytes1,
 	}
 
@@ -494,17 +494,17 @@ func TestBootstrapperMissingTxDependency(t *testing.T) {
 
 	txBytes1 := []byte{1}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     txID0,
 		StatusV: choices.Unknown,
 	}}
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     txID1,
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{tx0},
+		DependenciesV: []conflicts.Tx{tx0},
 		BytesV:        txBytes1,
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
@@ -530,7 +530,7 @@ func TestBootstrapperMissingTxDependency(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0}, // depends on vtx0
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx1},
+		TxsV:     []conflicts.Tx{tx1},
 		BytesV:   vtxBytes1,
 	}
 

@@ -11,12 +11,12 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 )
 
-func newSerializer(t *testing.T, parseTx func([]byte) (snowstorm.Tx, error)) *Serializer {
+func newSerializer(t *testing.T, parseTx func([]byte) (conflicts.Tx, error)) *Serializer {
 	vm := vertex.TestVM{}
 	vm.T = t
 	vm.Default(true)
@@ -61,7 +61,7 @@ func TestUnknownUniqueVertexErrors(t *testing.T) {
 func TestUniqueVertexCacheHit(t *testing.T) {
 	s := newSerializer(t, nil)
 
-	testTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	testTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV: ids.NewID([32]byte{1}),
 	}}
 
@@ -75,7 +75,7 @@ func TestUniqueVertexCacheHit(t *testing.T) {
 		parentIDs: parentIDs,
 		chainID:   chainID,
 		height:    height,
-		txs:       []snowstorm.Tx{testTx},
+		txs:       []conflicts.Tx{testTx},
 	}
 
 	uVtx := &uniqueVertex{
@@ -128,13 +128,13 @@ func TestUniqueVertexCacheHit(t *testing.T) {
 
 func TestUniqueVertexCacheMiss(t *testing.T) {
 	txBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
-	testTx := &snowstorm.TestTx{
+	testTx := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV: ids.NewID([32]byte{1}),
 		},
 		BytesV: txBytes,
 	}
-	parseTx := func(b []byte) (snowstorm.Tx, error) {
+	parseTx := func(b []byte) (conflicts.Tx, error) {
 		if !bytes.Equal(txBytes, b) {
 			t.Fatal("asked to parse unexpected transaction")
 		}
@@ -150,7 +150,7 @@ func TestUniqueVertexCacheMiss(t *testing.T) {
 		parentIDs: parentIDs,
 		chainID:   chainID,
 		height:    height,
-		txs:       []snowstorm.Tx{testTx},
+		txs:       []conflicts.Tx{testTx},
 	}
 	vertexBytes, err := innerVertex.Marshal()
 	if err != nil {

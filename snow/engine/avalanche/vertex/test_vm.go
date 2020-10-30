@@ -8,7 +8,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 )
 
@@ -24,10 +24,10 @@ type TestVM struct {
 
 	CantPendingTxs, CantParseTx, CantIssueTx, CantGetTx bool
 
-	PendingTxsF func() []snowstorm.Tx
-	ParseTxF    func([]byte) (snowstorm.Tx, error)
+	PendingTxsF func() []conflicts.Tx
+	ParseTxF    func([]byte) (conflicts.Tx, error)
 	IssueTxF    func([]byte, func(choices.Status), func(choices.Status)) (ids.ID, error)
-	GetTxF      func(ids.ID) (snowstorm.Tx, error)
+	GetTxF      func(ids.ID) (conflicts.Tx, error)
 }
 
 // Default ...
@@ -41,7 +41,7 @@ func (vm *TestVM) Default(cant bool) {
 }
 
 // PendingTxs ...
-func (vm *TestVM) PendingTxs() []snowstorm.Tx {
+func (vm *TestVM) PendingTxs() []conflicts.Tx {
 	if vm.PendingTxsF != nil {
 		return vm.PendingTxsF()
 	}
@@ -52,7 +52,7 @@ func (vm *TestVM) PendingTxs() []snowstorm.Tx {
 }
 
 // ParseTx ...
-func (vm *TestVM) ParseTx(b []byte) (snowstorm.Tx, error) {
+func (vm *TestVM) ParseTx(b []byte) (conflicts.Tx, error) {
 	if vm.ParseTxF != nil {
 		return vm.ParseTxF(b)
 	}
@@ -74,7 +74,7 @@ func (vm *TestVM) IssueTx(b []byte, issued, finalized func(choices.Status)) (ids
 }
 
 // GetTx ...
-func (vm *TestVM) GetTx(txID ids.ID) (snowstorm.Tx, error) {
+func (vm *TestVM) GetTx(txID ids.ID) (conflicts.Tx, error) {
 	if vm.GetTxF != nil {
 		return vm.GetTxF(txID)
 	}

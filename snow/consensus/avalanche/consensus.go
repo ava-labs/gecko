@@ -6,7 +6,7 @@ package avalanche
 import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 // TODO: Implement pruning of accepted decisions.
@@ -30,7 +30,7 @@ type Consensus interface {
 
 	// Returns true if the transaction is virtuous.
 	// That is, no transaction has been added that conflicts with it
-	IsVirtuous(snowstorm.Tx) bool
+	IsVirtuous(conflicts.Tx) (bool, error)
 
 	// Adds a new decision. Assumes the dependencies have already been added.
 	// Assumes that mutations don't conflict with themselves. Returns if a
@@ -41,7 +41,7 @@ type Consensus interface {
 	VertexIssued(Vertex) bool
 
 	// TxIssued returns true if a vertex containing this transanction has been added
-	TxIssued(snowstorm.Tx) bool
+	TxIssued(conflicts.Tx) bool
 
 	// Returns the set of transaction IDs that are virtuous but not contained in
 	// any preferred vertices.

@@ -42,7 +42,6 @@ func (ids *Set) Union(set Set) {
 
 // Contains returns true if the set contains this id, false otherwise
 func (ids *Set) Contains(id ID) bool {
-	ids.init(1)
 	return (*ids)[*id.ID]
 }
 

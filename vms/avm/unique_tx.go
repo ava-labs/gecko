@@ -9,7 +9,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 )
 
@@ -40,7 +40,7 @@ type TxState struct {
 	inputs     []ids.ID
 	inputUTXOs []*avax.UTXOID
 	utxos      []*avax.UTXO
-	deps       []snowstorm.Tx
+	deps       []conflicts.Tx
 
 	status choices.Status
 }
@@ -197,7 +197,7 @@ func (tx *UniqueTx) Status() choices.Status {
 }
 
 // Dependencies returns the set of transactions this transaction builds on
-func (tx *UniqueTx) Dependencies() []snowstorm.Tx {
+func (tx *UniqueTx) Dependencies() []conflicts.Tx {
 	tx.refresh()
 	if tx.Tx == nil || len(tx.deps) != 0 {
 		return tx.deps

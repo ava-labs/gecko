@@ -5,7 +5,7 @@ package vertex
 
 import (
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 )
 
@@ -15,11 +15,11 @@ type DAGVM interface {
 	common.VM
 
 	// Return any transactions that have not been sent to consensus yet
-	PendingTxs() []snowstorm.Tx
+	PendingTxs() []conflicts.Tx
 
 	// Convert a stream of bytes to a transaction or return an error
-	ParseTx(tx []byte) (snowstorm.Tx, error)
+	ParseTx(tx []byte) (conflicts.Tx, error)
 
 	// Retrieve a transaction that was submitted previously
-	GetTx(ids.ID) (snowstorm.Tx, error)
+	GetTx(ids.ID) (conflicts.Tx, error)
 }

@@ -10,7 +10,7 @@ import (
 	"sort"
 
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/utils"
 	"github.com/ava-labs/avalanchego/utils/hashing"
@@ -49,7 +49,7 @@ type innerVertex struct {
 	height  uint64
 
 	parentIDs []ids.ID
-	txs       []snowstorm.Tx
+	txs       []conflicts.Tx
 
 	bytes []byte
 }
@@ -146,7 +146,7 @@ func (vtx *innerVertex) Unmarshal(b []byte, vm vertex.DAGVM) error {
 	if numTxs > maxTxsPerVtx {
 		return fmt.Errorf("vertex says it has %d txs but max is %d", numTxs, maxTxsPerVtx)
 	}
-	txs := make([]snowstorm.Tx, numTxs)
+	txs := make([]conflicts.Tx, numTxs)
 	for i := 0; i < int(numTxs) && !p.Errored(); i++ {
 		tx, err := vm.ParseTx(p.UnpackBytes())
 		p.Add(err)
@@ -172,7 +172,7 @@ func (vtx *innerVertex) Unmarshal(b []byte, vm vertex.DAGVM) error {
 	return nil
 }
 
-type sortTxsData []snowstorm.Tx
+type sortTxsData []conflicts.Tx
 
 func (txs sortTxsData) Less(i, j int) bool {
 	return bytes.Compare(txs[i].ID().Bytes(), txs[j].ID().Bytes()) == -1
@@ -180,7 +180,7 @@ func (txs sortTxsData) Less(i, j int) bool {
 func (txs sortTxsData) Len() int      { return len(txs) }
 func (txs sortTxsData) Swap(i, j int) { txs[j], txs[i] = txs[i], txs[j] }
 
-func sortTxs(txs []snowstorm.Tx) { sort.Sort(sortTxsData(txs)) }
-func isSortedAndUniqueTxs(txs []snowstorm.Tx) bool {
+func sortTxs(txs []conflicts.Tx) { sort.Sort(sortTxsData(txs)) }
+func isSortedAndUniqueTxs(txs []conflicts.Tx) bool {
 	return utils.IsSortedAndUnique(sortTxsData(txs))
 }

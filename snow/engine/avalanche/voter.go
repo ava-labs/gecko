@@ -5,7 +5,7 @@ package avalanche
 
 import (
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 )
 
@@ -51,7 +51,7 @@ func (v *voter) Update() {
 	}
 
 	orphans := v.t.Consensus.Orphans()
-	txs := make([]snowstorm.Tx, 0, orphans.Len())
+	txs := make([]conflicts.Tx, 0, orphans.Len())
 	for orphanIDKey := range orphans {
 		orphanID := ids.NewID(orphanIDKey)
 		if tx, err := v.t.VM.GetTx(orphanID); err == nil {

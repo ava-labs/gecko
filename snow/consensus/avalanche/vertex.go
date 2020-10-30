@@ -5,7 +5,7 @@ package avalanche
 
 import (
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 // Vertex is a collection of multiple transactions tied to other vertices
@@ -20,7 +20,7 @@ type Vertex interface {
 	Height() (uint64, error)
 
 	// Returns a series of state transitions to be performed on acceptance
-	Txs() ([]snowstorm.Tx, error)
+	Txs() ([]conflicts.Tx, error)
 
 	// Returns the binary representation of this vertex
 	Bytes() []byte

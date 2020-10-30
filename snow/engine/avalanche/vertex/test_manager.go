@@ -9,7 +9,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 var (
@@ -26,7 +26,7 @@ type TestManager struct {
 	CantParseVertex, CantBuildVertex, CantGetVertex, CantEdge bool
 
 	ParseVertexF func([]byte) (avalanche.Vertex, error)
-	BuildVertexF func([]ids.ID, []snowstorm.Tx) (avalanche.Vertex, error)
+	BuildVertexF func([]ids.ID, []conflicts.Tx) (avalanche.Vertex, error)
 	GetVertexF   func(ids.ID) (avalanche.Vertex, error)
 	EdgeF        func() []ids.ID
 }
@@ -51,7 +51,7 @@ func (m *TestManager) ParseVertex(b []byte) (avalanche.Vertex, error) {
 }
 
 // BuildVertex ...
-func (m *TestManager) BuildVertex(set []ids.ID, txs []snowstorm.Tx) (avalanche.Vertex, error) {
+func (m *TestManager) BuildVertex(set []ids.ID, txs []conflicts.Tx) (avalanche.Vertex, error) {
 	if m.BuildVertexF != nil {
 		return m.BuildVertexF(set, txs)
 	}
