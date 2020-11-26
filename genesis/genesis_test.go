@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ava-labs/avalanchego/vms/avm"
+
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"
-	"github.com/ava-labs/avalanchego/vms/avm"
 	"github.com/ava-labs/avalanchego/vms/evm"
 	"github.com/ava-labs/avalanchego/vms/platformvm"
 )

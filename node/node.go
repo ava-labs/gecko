@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ava-labs/avalanchego/vms/avm"
+
 	"github.com/ava-labs/avalanchego/api"
 	"github.com/ava-labs/avalanchego/api/admin"
 	"github.com/ava-labs/avalanchego/api/health"
@@ -46,7 +48,6 @@ import (
 	"github.com/ava-labs/avalanchego/utils/wrappers"
 	"github.com/ava-labs/avalanchego/version"
 	"github.com/ava-labs/avalanchego/vms"
-	"github.com/ava-labs/avalanchego/vms/avm"
 	"github.com/ava-labs/avalanchego/vms/evm"
 	"github.com/ava-labs/avalanchego/vms/nftfx"
 	"github.com/ava-labs/avalanchego/vms/platformvm"

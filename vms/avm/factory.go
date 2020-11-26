@@ -1,6 +1,3 @@
-// (c) 2019-2020, Ava Labs, Inc. All rights reserved.
-// See the file LICENSE for licensing terms.
-
 package avm
 
 import (
@@ -19,10 +16,8 @@ type Factory struct {
 	Fee         uint64
 }
 
+// TODO review this
 // New ...
 func (f *Factory) New(*snow.Context) (interface{}, error) {
-	return &VM{
-		creationTxFee: f.CreationFee,
-		txFee:         f.Fee,
-	}, nil
+	return NewVM(f.CreationFee, f.Fee), nil
 }

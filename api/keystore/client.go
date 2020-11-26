@@ -6,7 +6,8 @@ package keystore
 import (
 	"time"
 
-	"github.com/ava-labs/avalanchego/api"
+	"github.com/ava-labs/avalanchego/api/apiargs"
+
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/rpc"
 )
@@ -24,8 +25,8 @@ func NewClient(uri string, requestTimeout time.Duration) *Client {
 }
 
 // CreateUser ...
-func (c *Client) CreateUser(user api.UserPass) (bool, error) {
-	res := &api.SuccessResponse{}
+func (c *Client) CreateUser(user apiargs.UserPass) (bool, error) {
+	res := &apiargs.SuccessResponse{}
 	err := c.requester.SendRequest("createUser", &user, res)
 	return res.Success, err
 }
@@ -38,7 +39,7 @@ func (c *Client) ListUsers() ([]string, error) {
 }
 
 // ExportUser returns the byte representation of the requested [user]
-func (c *Client) ExportUser(user api.UserPass) ([]byte, error) {
+func (c *Client) ExportUser(user apiargs.UserPass) ([]byte, error) {
 	res := &ExportUserReply{
 		Encoding: formatting.Hex,
 	}
@@ -50,13 +51,13 @@ func (c *Client) ExportUser(user api.UserPass) ([]byte, error) {
 }
 
 // ImportUser imports the keystore user in [account] under [user]
-func (c *Client) ImportUser(user api.UserPass, account []byte) (bool, error) {
+func (c *Client) ImportUser(user apiargs.UserPass, account []byte) (bool, error) {
 	accountStr, err := formatting.Encode(formatting.Hex, account)
 	if err != nil {
 		return false, err
 	}
 
-	res := &api.SuccessResponse{}
+	res := &apiargs.SuccessResponse{}
 	err = c.requester.SendRequest("importUser", &ImportUserArgs{
 		UserPass: user,
 		User:     accountStr,
@@ -66,8 +67,8 @@ func (c *Client) ImportUser(user api.UserPass, account []byte) (bool, error) {
 }
 
 // DeleteUser removes [user] from the node's keystore users
-func (c *Client) DeleteUser(user api.UserPass) (bool, error) {
-	res := &api.SuccessResponse{}
+func (c *Client) DeleteUser(user apiargs.UserPass) (bool, error) {
+	res := &apiargs.SuccessResponse{}
 	err := c.requester.SendRequest("deleteUser", &user, res)
 	return res.Success, err
 }

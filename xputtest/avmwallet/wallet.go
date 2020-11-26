@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ava-labs/avalanchego/vms/avm/internalavm"
+
 	stdmath "math"
 
 	"github.com/ava-labs/avalanchego/ids"
@@ -17,7 +19,6 @@ import (
 	"github.com/ava-labs/avalanchego/utils/math"
 	"github.com/ava-labs/avalanchego/utils/timer"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
-	"github.com/ava-labs/avalanchego/vms/avm"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 )
@@ -41,7 +42,7 @@ type Wallet struct {
 	balance map[ids.ID]uint64
 	txFee   uint64
 
-	txs []*avm.Tx
+	txs []*internalavm.Tx
 }
 
 // NewWallet returns a new Wallet
@@ -50,11 +51,11 @@ func NewWallet(log logging.Logger, networkID uint32, chainID ids.ID, txFee uint6
 	m := codec.NewDefaultManager()
 	errs := wrappers.Errs{}
 	errs.Add(
-		c.RegisterType(&avm.BaseTx{}),
-		c.RegisterType(&avm.CreateAssetTx{}),
-		c.RegisterType(&avm.OperationTx{}),
-		c.RegisterType(&avm.ImportTx{}),
-		c.RegisterType(&avm.ExportTx{}),
+		c.RegisterType(&internalavm.BaseTx{}),
+		c.RegisterType(&internalavm.CreateAssetTx{}),
+		c.RegisterType(&internalavm.OperationTx{}),
+		c.RegisterType(&internalavm.ImportTx{}),
+		c.RegisterType(&internalavm.ExportTx{}),
 		c.RegisterType(&secp256k1fx.TransferInput{}),
 		c.RegisterType(&secp256k1fx.MintOutput{}),
 		c.RegisterType(&secp256k1fx.TransferOutput{}),
@@ -133,7 +134,7 @@ func (w *Wallet) RemoveUTXO(utxoID ids.ID) {
 func (w *Wallet) Balance(assetID ids.ID) uint64 { return w.balance[assetID] }
 
 // CreateTx returns a tx that sends [amount] of [assetID] to [destAddr]
-func (w *Wallet) CreateTx(assetID ids.ID, amount uint64, destAddr ids.ShortID) (*avm.Tx, error) {
+func (w *Wallet) CreateTx(assetID ids.ID, amount uint64, destAddr ids.ShortID) (*internalavm.Tx, error) {
 	if amount == 0 {
 		return nil, errors.New("invalid amount")
 	}
@@ -213,7 +214,7 @@ func (w *Wallet) CreateTx(assetID ids.ID, amount uint64, destAddr ids.ShortID) (
 
 	avax.SortTransferableOutputs(outs, w.codec)
 
-	tx := &avm.Tx{UnsignedTx: &avm.BaseTx{BaseTx: avax.BaseTx{
+	tx := &internalavm.Tx{UnsignedTx: &internalavm.BaseTx{BaseTx: avax.BaseTx{
 		NetworkID:    w.networkID,
 		BlockchainID: w.chainID,
 		Outs:         outs,
@@ -238,7 +239,7 @@ func (w *Wallet) GenerateTxs(numTxs int, assetID ids.ID) error {
 		frequency = 1000
 	}
 
-	w.txs = make([]*avm.Tx, numTxs)
+	w.txs = make([]*internalavm.Tx, numTxs)
 	for i := 0; i < numTxs; i++ {
 		addr, err := w.CreateAddress()
 		if err != nil {
@@ -268,7 +269,7 @@ func (w *Wallet) GenerateTxs(numTxs int, assetID ids.ID) error {
 }
 
 // NextTx returns the next tx to be sent as part of xput test
-func (w *Wallet) NextTx() *avm.Tx {
+func (w *Wallet) NextTx() *internalavm.Tx {
 	if len(w.txs) == 0 {
 		return nil
 	}

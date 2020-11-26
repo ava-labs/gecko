@@ -6,7 +6,8 @@ package ipcs
 import (
 	"time"
 
-	"github.com/ava-labs/avalanchego/api"
+	"github.com/ava-labs/avalanchego/api/apiargs"
+
 	"github.com/ava-labs/avalanchego/utils/rpc"
 )
 
@@ -33,7 +34,7 @@ func (c *Client) PublishBlockchain(blockchainID string) (*PublishBlockchainReply
 
 // UnpublishBlockchain requests the node to stop publishing consensus and decision events
 func (c *Client) UnpublishBlockchain(blockchainID string) (bool, error) {
-	res := &api.SuccessResponse{}
+	res := &apiargs.SuccessResponse{}
 	err := c.requester.SendRequest("unpublishBlockchain", &UnpublishBlockchainArgs{
 		BlockchainID: blockchainID,
 	}, res)

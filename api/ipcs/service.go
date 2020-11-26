@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ava-labs/avalanchego/api/apiargs"
+
 	"github.com/gorilla/rpc/v2"
 
 	"github.com/ava-labs/avalanchego/api"
@@ -81,7 +83,7 @@ type UnpublishBlockchainArgs struct {
 }
 
 // UnpublishBlockchain closes publishing of a blockchainID
-func (ipc *IPCServer) UnpublishBlockchain(r *http.Request, args *UnpublishBlockchainArgs, reply *api.SuccessResponse) error {
+func (ipc *IPCServer) UnpublishBlockchain(r *http.Request, args *UnpublishBlockchainArgs, reply *apiargs.SuccessResponse) error {
 	ipc.log.Info("IPCs: UnpublishBlockchain called with BlockchainID: %s", args.BlockchainID)
 	chainID, err := ipc.chainManager.Lookup(args.BlockchainID)
 	if err != nil {

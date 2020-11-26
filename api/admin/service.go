@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/ava-labs/avalanchego/api/apiargs"
+
 	"github.com/gorilla/rpc/v2"
 
 	"github.com/ava-labs/avalanchego/api"
@@ -54,14 +56,14 @@ func NewService(log logging.Logger, chainManager chains.Manager, httpServer *api
 }
 
 // StartCPUProfiler starts a cpu profile writing to the specified file
-func (service *Admin) StartCPUProfiler(_ *http.Request, _ *struct{}, reply *api.SuccessResponse) error {
+func (service *Admin) StartCPUProfiler(_ *http.Request, _ *struct{}, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: StartCPUProfiler called")
 	reply.Success = true
 	return service.performance.StartCPUProfiler()
 }
 
 // StopCPUProfiler stops the cpu profile
-func (service *Admin) StopCPUProfiler(_ *http.Request, _ *struct{}, reply *api.SuccessResponse) error {
+func (service *Admin) StopCPUProfiler(_ *http.Request, _ *struct{}, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: StopCPUProfiler called")
 
 	reply.Success = true
@@ -69,7 +71,7 @@ func (service *Admin) StopCPUProfiler(_ *http.Request, _ *struct{}, reply *api.S
 }
 
 // MemoryProfile runs a memory profile writing to the specified file
-func (service *Admin) MemoryProfile(_ *http.Request, _ *struct{}, reply *api.SuccessResponse) error {
+func (service *Admin) MemoryProfile(_ *http.Request, _ *struct{}, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: MemoryProfile called")
 
 	reply.Success = true
@@ -77,7 +79,7 @@ func (service *Admin) MemoryProfile(_ *http.Request, _ *struct{}, reply *api.Suc
 }
 
 // LockProfile runs a mutex profile writing to the specified file
-func (service *Admin) LockProfile(_ *http.Request, _ *struct{}, reply *api.SuccessResponse) error {
+func (service *Admin) LockProfile(_ *http.Request, _ *struct{}, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: LockProfile called")
 
 	reply.Success = true
@@ -91,7 +93,7 @@ type AliasArgs struct {
 }
 
 // Alias attempts to alias an HTTP endpoint to a new name
-func (service *Admin) Alias(_ *http.Request, args *AliasArgs, reply *api.SuccessResponse) error {
+func (service *Admin) Alias(_ *http.Request, args *AliasArgs, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: Alias called with URL: %s, Alias: %s", args.Endpoint, args.Alias)
 
 	if len(args.Alias) > maxAliasLength {
@@ -109,7 +111,7 @@ type AliasChainArgs struct {
 }
 
 // AliasChain attempts to alias a chain to a new name
-func (service *Admin) AliasChain(_ *http.Request, args *AliasChainArgs, reply *api.SuccessResponse) error {
+func (service *Admin) AliasChain(_ *http.Request, args *AliasChainArgs, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: AliasChain called with Chain: %s, Alias: %s", args.Chain, args.Alias)
 
 	if len(args.Alias) > maxAliasLength {
@@ -129,7 +131,7 @@ func (service *Admin) AliasChain(_ *http.Request, args *AliasChainArgs, reply *a
 }
 
 // Stacktrace returns the current global stacktrace
-func (service *Admin) Stacktrace(_ *http.Request, _ *struct{}, reply *api.SuccessResponse) error {
+func (service *Admin) Stacktrace(_ *http.Request, _ *struct{}, reply *apiargs.SuccessResponse) error {
 	service.log.Info("Admin: Stacktrace called")
 
 	reply.Success = true

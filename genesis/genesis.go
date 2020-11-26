@@ -11,13 +11,18 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ava-labs/avalanchego/vms/avm"
+
+	"github.com/ava-labs/avalanchego/vms/avm/vmargs"
+
+	"github.com/ava-labs/avalanchego/vms/avm/internalavm"
+
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/codec"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/json"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
-	"github.com/ava-labs/avalanchego/vms/avm"
 	"github.com/ava-labs/avalanchego/vms/evm"
 	"github.com/ava-labs/avalanchego/vms/nftfx"
 	"github.com/ava-labs/avalanchego/vms/platformvm"
@@ -49,12 +54,12 @@ func FromConfig(config *Config) ([]byte, ids.ID, error) {
 	amount := uint64(0)
 
 	// Specify the genesis state of the AVM
-	avmArgs := avm.BuildGenesisArgs{
+	avmArgs := vmargs.BuildGenesisArgs{
 		NetworkID: json.Uint32(config.NetworkID),
 		Encoding:  defaultEncoding,
 	}
 	{
-		avax := avm.AssetDefinition{
+		avax := vmargs.AssetDefinition{
 			Name:         "Avalanche",
 			Symbol:       "AVAX",
 			Denomination: 9,
@@ -75,7 +80,7 @@ func FromConfig(config *Config) ([]byte, ids.ID, error) {
 				return nil, ids.ID{}, err
 			}
 
-			avax.InitialState["fixedCap"] = append(avax.InitialState["fixedCap"], avm.Holder{
+			avax.InitialState["fixedCap"] = append(avax.InitialState["fixedCap"], vmargs.Holder{
 				Amount:  json.Uint64(allocation.InitialAmount),
 				Address: addr,
 			})
@@ -88,13 +93,13 @@ func FromConfig(config *Config) ([]byte, ids.ID, error) {
 		if err != nil {
 			return nil, ids.Empty, fmt.Errorf("couldn't parse memo bytes to string: %w", err)
 		}
-		avmArgs.GenesisData = map[string]avm.AssetDefinition{
+		avmArgs.GenesisData = map[string]vmargs.AssetDefinition{
 			"AVAX": avax, // The AVM starts out with one asset: AVAX
 		}
 	}
-	avmReply := avm.BuildGenesisReply{}
+	avmReply := vmargs.BuildGenesisReply{}
 
-	avmSS := avm.CreateStaticService()
+	avmSS := internalavm.CreateStaticService()
 	err := avmSS.BuildGenesis(nil, &avmArgs, &avmReply)
 	if err != nil {
 		return nil, ids.ID{}, err
@@ -347,11 +352,11 @@ func AVAXAssetID(avmGenesisBytes []byte) (ids.ID, error) {
 	m := codec.NewManager(math.MaxUint32)
 	errs := wrappers.Errs{}
 	errs.Add(
-		c.RegisterType(&avm.BaseTx{}),
-		c.RegisterType(&avm.CreateAssetTx{}),
-		c.RegisterType(&avm.OperationTx{}),
-		c.RegisterType(&avm.ImportTx{}),
-		c.RegisterType(&avm.ExportTx{}),
+		c.RegisterType(&internalavm.BaseTx{}),
+		c.RegisterType(&internalavm.CreateAssetTx{}),
+		c.RegisterType(&internalavm.OperationTx{}),
+		c.RegisterType(&internalavm.ImportTx{}),
+		c.RegisterType(&internalavm.ExportTx{}),
 		c.RegisterType(&secp256k1fx.TransferInput{}),
 		c.RegisterType(&secp256k1fx.MintOutput{}),
 		c.RegisterType(&secp256k1fx.TransferOutput{}),
@@ -363,7 +368,7 @@ func AVAXAssetID(avmGenesisBytes []byte) (ids.ID, error) {
 		return ids.ID{}, errs.Err
 	}
 
-	genesis := avm.Genesis{}
+	genesis := internalavm.Genesis{}
 	if _, err := m.Unmarshal(avmGenesisBytes, &genesis); err != nil {
 		return ids.ID{}, err
 	}
@@ -373,7 +378,7 @@ func AVAXAssetID(avmGenesisBytes []byte) (ids.ID, error) {
 	}
 	genesisTx := genesis.Txs[0]
 
-	tx := avm.Tx{UnsignedTx: &genesisTx.CreateAssetTx}
+	tx := internalavm.Tx{UnsignedTx: &genesisTx.CreateAssetTx}
 	unsignedBytes, err := m.Marshal(codecVersion, tx.UnsignedTx)
 	if err != nil {
 		return ids.ID{}, err

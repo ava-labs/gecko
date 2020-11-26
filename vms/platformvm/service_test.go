@@ -8,16 +8,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/ava-labs/avalanchego/vms/avm"
+
+	"github.com/ava-labs/avalanchego/api/apiargs"
+
 	"strings"
 	"testing"
 
-	"github.com/ava-labs/avalanchego/api"
 	"github.com/ava-labs/avalanchego/api/keystore"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto"
 	"github.com/ava-labs/avalanchego/utils/formatting"
-	"github.com/ava-labs/avalanchego/vms/avm"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
 
@@ -158,7 +160,7 @@ func TestImportKey(t *testing.T) {
 		service.vm.Ctx.Lock.Unlock()
 	}()
 
-	reply := api.JSONAddress{}
+	reply := apiargs.JSONAddress{}
 	if err := service.ImportKey(nil, &args, &reply); err != nil {
 		t.Fatal(err)
 	}
@@ -343,11 +345,11 @@ func TestGetTx(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed test '%s': %s", test.description, err)
 		}
-		arg := &api.GetTxArgs{
+		arg := &apiargs.GetTxArgs{
 			TxID:     tx.ID(),
 			Encoding: formatting.CB58,
 		}
-		var response api.FormattedTx
+		var response apiargs.FormattedTx
 		if err := service.GetTx(nil, arg, &response); err == nil {
 			t.Fatalf("failed test '%s': haven't issued tx yet so shouldn't be able to get it", test.description)
 		} else if err := service.vm.mempool.IssueTx(tx); err != nil {
@@ -397,7 +399,7 @@ func TestGetBalance(t *testing.T) {
 	// Ensure GetStake is correct for each of the genesis validators
 	genesis, _ := defaultGenesis()
 	for _, utxo := range genesis.UTXOs {
-		request := api.JSONAddress{
+		request := apiargs.JSONAddress{
 			Address: fmt.Sprintf("P-%s", utxo.Address),
 		}
 		reply := GetBalanceResponse{}
@@ -437,7 +439,7 @@ func TestGetStake(t *testing.T) {
 	for _, validator := range genesis.Validators {
 		addr := fmt.Sprintf("P-%s", validator.RewardOwner.Addresses[0])
 		addrs = append(addrs, addr)
-		args := api.JSONAddresses{
+		args := apiargs.JSONAddresses{
 			Addresses: []string{addr},
 		}
 		response := GetStakeReply{}
@@ -450,7 +452,7 @@ func TestGetStake(t *testing.T) {
 	}
 
 	// Make sure this works for multiple addresses
-	args := api.JSONAddresses{
+	args := apiargs.JSONAddresses{
 		Addresses: addrs,
 	}
 	response := GetStakeReply{}
