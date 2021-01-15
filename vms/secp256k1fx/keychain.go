@@ -72,6 +72,20 @@ func (kc *Keychain) New() (*crypto.PrivateKeySECP256K1R, error) {
 // Spend attempts to create an input
 func (kc *Keychain) Spend(out verify.Verifiable, time uint64) (verify.Verifiable, []*crypto.PrivateKeySECP256K1R, error) {
 	switch out := out.(type) {
+	case *ManagedAssetStatusOutput:
+		if sigIndices, keys, able := kc.Match(&out.Mgr, time); able {
+			return &Input{
+				SigIndices: sigIndices,
+			}, keys, nil
+		}
+		return nil, nil, errCantSpend
+	case *OutputOwners:
+		if sigIndices, keys, able := kc.Match(out, time); able {
+			return &Input{
+				SigIndices: sigIndices,
+			}, keys, nil
+		}
+		return nil, nil, errCantSpend
 	case *MintOutput:
 		if sigIndices, keys, able := kc.Match(&out.OutputOwners, time); able {
 			return &Input{

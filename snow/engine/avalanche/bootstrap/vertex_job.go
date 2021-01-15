@@ -92,4 +92,6 @@ func (v *vertexJob) Execute() error {
 	return nil
 }
 
-func (v *vertexJob) Bytes() []byte { return v.vtx.Bytes() }
+func (v *vertexJob) Bytes() []byte         { return v.vtx.Bytes() }
+func (v *vertexJob) DispatchID() ids.ID    { return v.vtx.ID() }
+func (v *vertexJob) DispatchBytes() []byte { return v.vtx.Bytes() }

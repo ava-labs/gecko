@@ -91,6 +91,7 @@ func (b *Bootstrapper) Initialize(
 		log:         config.Ctx.Log,
 		numAccepted: b.numAcceptedTxs,
 		numDropped:  b.numDroppedTxs,
+		manager:     b.Manager,
 		vm:          b.VM,
 	})
 
@@ -200,6 +201,7 @@ func (b *Bootstrapper) process(vtxs ...avalanche.Vertex) error {
 					numAccepted: b.numAcceptedTxs,
 					numDropped:  b.numDroppedTxs,
 					tx:          tx,
+					vm:          b.VM,
 				}); err == nil {
 					b.numFetchedTxs.Inc()
 				} else {
@@ -395,7 +397,7 @@ func (b *Bootstrapper) executeAll(jobs *queue.Jobs, events snow.EventDispatcher)
 			b.Ctx.Log.Info("executed %d operations", numExecuted)
 		}
 
-		events.Accept(b.Ctx, job.ID(), job.Bytes())
+		events.Accept(b.Ctx, job.DispatchID(), job.DispatchBytes())
 	}
 	b.Ctx.Log.Info("executed %d operations", numExecuted)
 	return nil

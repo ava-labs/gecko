@@ -12,7 +12,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche/poll"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/bootstrap"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
@@ -43,8 +43,8 @@ type Transitive struct {
 	// The set of vertices that have been requested in Get messages but not yet received
 	outstandingVtxReqs common.Requests
 
-	// missingTxs tracks transaction that are missing
-	missingTxs ids.Set
+	// missingTransitions tracks transaction that are missing
+	missingTransitions ids.Set
 
 	// IDs of vertices that are queued to be added to consensus but haven't yet been
 	// because of missing dependencies
@@ -230,15 +230,15 @@ func (t *Transitive) GetFailed(vdr ids.ShortID, requestID uint32) error {
 	t.vtxBlocked.Abandon(vtxID)
 
 	if t.outstandingVtxReqs.Len() == 0 {
-		for txID := range t.missingTxs {
-			t.txBlocked.Abandon(txID)
+		for trID := range t.missingTransitions {
+			t.txBlocked.Abandon(trID)
 		}
-		t.missingTxs.Clear()
+		t.missingTransitions.Clear()
 	}
 
 	// Track performance statistics
 	t.numVtxRequests.Set(float64(t.outstandingVtxReqs.Len()))
-	t.numMissingTxs.Set(float64(t.missingTxs.Len()))
+	t.numMissingTxs.Set(float64(t.missingTransitions.Len()))
 	return t.errs.Err
 }
 
@@ -337,8 +337,9 @@ func (t *Transitive) Notify(msg common.Message) error {
 
 	switch msg {
 	case common.PendingTxs:
-		txs := t.VM.Pending()
-		return t.batch(txs, false /*=force*/, false /*=empty*/)
+		trs := t.VM.Pending()
+		epoch := t.Ctx.Epoch()
+		return t.batch(epoch, trs, nil, false /*=force*/, false /*=empty*/, false /*=updatedEpoch*/)
 	default:
 		return nil
 	}
@@ -352,8 +353,9 @@ func (t *Transitive) repoll() error {
 		return nil
 	}
 
-	txs := t.VM.Pending()
-	if err := t.batch(txs, false /*=force*/, true /*=empty*/); err != nil {
+	trs := t.VM.Pending()
+	epoch := t.Ctx.Epoch()
+	if err := t.batch(epoch, trs, nil, false /*=force*/, true /*=empty*/, false /*=updatedEpoch*/); err != nil {
 		return err
 	}
 
@@ -417,7 +419,7 @@ func (t *Transitive) issueFrom(vdr ids.ShortID, vtx avalanche.Vertex) (bool, err
 		}
 
 		// Queue up this vertex to be issued once its dependencies are met
-		if err := t.issue(vtx); err != nil {
+		if err := t.issue(vtx, false); err != nil {
 			return false, err
 		}
 	}
@@ -426,7 +428,7 @@ func (t *Transitive) issueFrom(vdr ids.ShortID, vtx avalanche.Vertex) (bool, err
 
 // issue queues [vtx] to be put into consensus after its dependencies are met.
 // Assumes we have [vtx].
-func (t *Transitive) issue(vtx avalanche.Vertex) error {
+func (t *Transitive) issue(vtx avalanche.Vertex, updatedEpoch bool) error {
 	vtxID := vtx.ID()
 
 	// Add to set of vertices that have been queued up to be issued but haven't been yet
@@ -435,8 +437,9 @@ func (t *Transitive) issue(vtx avalanche.Vertex) error {
 
 	// Will put [vtx] into consensus once dependencies are met
 	i := &issuer{
-		t:   t,
-		vtx: vtx,
+		t:            t,
+		vtx:          vtx,
+		updatedEpoch: updatedEpoch,
 	}
 
 	parents, err := vtx.Parents()
@@ -454,17 +457,16 @@ func (t *Transitive) issue(vtx avalanche.Vertex) error {
 	if err != nil {
 		return err
 	}
-	txIDs := ids.Set{}
+	trIDs := ids.Set{}
 	for _, tx := range txs {
-		txIDs.Add(tx.ID())
+		trIDs.Add(tx.Transition().ID())
 	}
 
 	for _, tx := range txs {
-		for _, dep := range tx.Dependencies() {
-			depID := dep.ID()
-			if !txIDs.Contains(depID) && !t.Consensus.TxIssued(dep) {
-				// This transaction hasn't been issued yet. Add it as a dependency.
-				t.missingTxs.Add(depID)
+		tr := tx.Transition()
+		for _, depID := range tr.Dependencies() {
+			if !trIDs.Contains(depID) && !t.Consensus.TransitionProcessing(depID) {
+				t.missingTransitions.Add(depID)
 				i.txDeps.Add(depID)
 			}
 		}
@@ -480,37 +482,42 @@ func (t *Transitive) issue(vtx avalanche.Vertex) error {
 
 	if t.outstandingVtxReqs.Len() == 0 {
 		// There are no outstanding vertex requests but we don't have these transactions, so we're not getting them.
-		for txID := range t.missingTxs {
+		for txID := range t.missingTransitions {
 			t.txBlocked.Abandon(txID)
 		}
-		t.missingTxs.Clear()
+		t.missingTransitions.Clear()
 	}
 
 	// Track performance statistics
 	t.numVtxRequests.Set(float64(t.outstandingVtxReqs.Len()))
-	t.numMissingTxs.Set(float64(t.missingTxs.Len()))
+	t.numMissingTxs.Set(float64(t.missingTransitions.Len()))
 	t.numPendingVts.Set(float64(t.pending.Len()))
 	return t.errs.Err
 }
 
-// Batchs [txs] into vertices and issue them.
+// Batchs [trs] into vertices and issue them.
 // If [force] is true, forces each tx to be issued.
-// Otherwise, some txs may not be put into vertices that are issued.
-// If [empty], will always result in a new poll.
-func (t *Transitive) batch(txs []snowstorm.Tx, force, empty bool) error {
-	issuedTxs := ids.Set{}
+// Otherwise, some trs may not be put into vertices that are issued.
+// If [mustPoll], will always result in a new poll.
+func (t *Transitive) batch(epoch uint32, trs []conflicts.Transition, restrictions [][]ids.ID, force, mustPoll bool, updatedEpoch bool) error {
+	issuedTrs := ids.Set{}
 	consumed := ids.Set{}
 	issued := false
 	orphans := t.Consensus.Orphans()
 	start := 0
 	end := 0
-	for end < len(txs) {
-		tx := txs[end]
+	for end < len(trs) {
+		tr := trs[end]
 		inputs := ids.Set{}
-		inputs.Add(tx.InputIDs()...)
+		inputs.Add(tr.InputIDs()...)
 		overlaps := consumed.Overlaps(inputs)
 		if end-start >= t.Params.BatchSize || (force && overlaps) {
-			if err := t.issueBatch(txs[start:end]); err != nil {
+			nextRestrictions := []ids.ID(nil)
+			if len(restrictions) > 0 {
+				nextRestrictions = restrictions[0]
+				restrictions = restrictions[1:]
+			}
+			if err := t.issueBatch(epoch, trs[start:end], nextRestrictions, updatedEpoch); err != nil {
 				return err
 			}
 			start = end
@@ -519,24 +526,49 @@ func (t *Transitive) batch(txs []snowstorm.Tx, force, empty bool) error {
 			overlaps = false
 		}
 
-		if txID := tx.ID(); !overlaps && // should never allow conflicting txs in the same vertex
-			!issuedTxs.Contains(txID) && // shouldn't issue duplicated transactions to the same vertex
-			(force || t.Consensus.IsVirtuous(tx)) && // force allows for a conflict to be issued
+		tx, err := t.Manager.Wrap(epoch, tr, nil)
+		if err != nil {
+			return err
+		}
+		isVirtuous, err := t.Consensus.IsVirtuous(tx)
+		if err != nil {
+			return err
+		}
+		txID := tx.ID()
+
+		if trID := tr.ID(); !overlaps && // should never allow conflicting txs in the same vertex
+			(force || isVirtuous) && // force allows for a conflict to be issued
+			!issuedTrs.Contains(trID) && // shouldn't issue duplicated transactions to the same vertex
+			!tr.Status().Decided() && // shouldn't re-issue a decided transaction
 			(!t.Consensus.TxIssued(tx) || orphans.Contains(txID)) { // should only reissue orphaned txs
+			// Add the transition to the current batch
 			end++
-			issuedTxs.Add(txID)
+			issuedTrs.Add(trID)
 			consumed.Union(inputs)
 		} else {
-			newLen := len(txs) - 1
-			txs[end] = txs[newLen]
-			txs[newLen] = nil
-			txs = txs[:newLen]
+			// Drop the transition
+			newLen := len(trs) - 1
+			trs[end] = trs[newLen]
+			trs[newLen] = nil
+			trs = trs[:newLen]
 		}
 	}
 
-	if end > start {
-		return t.issueBatch(txs[start:end])
-	} else if empty && !issued {
+	for len(restrictions) > 1 {
+		nextRestrictions := restrictions[0]
+		restrictions = restrictions[1:]
+		if err := t.issueBatch(epoch, nil, nextRestrictions, updatedEpoch); err != nil {
+			return err
+		}
+	}
+
+	if end > start || len(restrictions) > 0 {
+		nextRestrictions := []ids.ID(nil)
+		if len(restrictions) > 0 {
+			nextRestrictions = restrictions[0]
+		}
+		return t.issueBatch(epoch, trs[start:end], nextRestrictions, updatedEpoch)
+	} else if mustPoll && !issued {
 		t.issueRepoll()
 	}
 	return nil
@@ -569,9 +601,11 @@ func (t *Transitive) issueRepoll() {
 	}
 }
 
-// Puts a batch of transactions into a vertex and issues it into consensus.
-func (t *Transitive) issueBatch(txs []snowstorm.Tx) error {
-	t.Ctx.Log.Verbo("batching %d transactions into a new vertex", len(txs))
+// Puts a batch of transitions and restrictions into a vertex and issues it into
+// consensus.
+func (t *Transitive) issueBatch(epoch uint32, trs []conflicts.Transition, restrictions []ids.ID, updatedEpoch bool) error {
+	t.Ctx.Log.Verbo("batching %d transitions and %d restrictions into a new vertex",
+		len(trs), len(restrictions))
 
 	// Randomly select parents of this vertex from among the virtuous set
 	virtuousIDs := t.Consensus.Virtuous().CappedList(t.Params.Parents)
@@ -591,13 +625,13 @@ func (t *Transitive) issueBatch(txs []snowstorm.Tx) error {
 		parentIDs[i] = virtuousIDs[int(index)]
 	}
 
-	vtx, err := t.Manager.Build(0, parentIDs, txs, nil)
+	vtx, err := t.Manager.Build(epoch, parentIDs, trs, restrictions)
 	if err != nil {
-		t.Ctx.Log.Warn("error building new vertex with %d parents and %d transactions",
-			len(parentIDs), len(txs))
+		t.Ctx.Log.Warn("error building new vertex with %d parents, %d transitions, and %d restrictions",
+			len(parentIDs), len(trs), len(restrictions))
 		return nil
 	}
-	return t.issue(vtx)
+	return t.issue(vtx, updatedEpoch)
 }
 
 // Send a request to [vdr] asking them to send us vertex [vtxID]

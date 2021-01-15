@@ -15,4 +15,7 @@ type Job interface {
 	Execute() error
 
 	Bytes() []byte
+
+	DispatchID() ids.ID
+	DispatchBytes() []byte
 }

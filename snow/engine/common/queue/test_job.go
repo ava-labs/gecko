@@ -17,23 +17,27 @@ type TestJob struct {
 	CantID,
 	CantMissingDependencies,
 	CantExecute,
-	CantBytes bool
+	CantBytes,
+	CantDispatchID,
+	CantDispatchBytes bool
 
 	IDF                  func() ids.ID
 	MissingDependenciesF func() (ids.Set, error)
 	ExecuteF             func() error
 	BytesF               func() []byte
+	DispatchIDF          func() ids.ID
+	DispatchBytesF       func() []byte
 }
 
-// Default ...
 func (j *TestJob) Default(cant bool) {
 	j.CantID = cant
 	j.CantMissingDependencies = cant
 	j.CantExecute = cant
 	j.CantBytes = cant
+	j.CantDispatchID = cant
+	j.CantDispatchBytes = cant
 }
 
-// ID ...
 func (j *TestJob) ID() ids.ID {
 	if j.IDF != nil {
 		return j.IDF()
@@ -44,7 +48,6 @@ func (j *TestJob) ID() ids.ID {
 	return ids.ID{}
 }
 
-// MissingDependencies ...
 func (j *TestJob) MissingDependencies() (ids.Set, error) {
 	if j.MissingDependenciesF != nil {
 		return j.MissingDependenciesF()
@@ -55,7 +58,6 @@ func (j *TestJob) MissingDependencies() (ids.Set, error) {
 	return ids.Set{}, nil
 }
 
-// Execute ...
 func (j *TestJob) Execute() error {
 	if j.ExecuteF != nil {
 		return j.ExecuteF()
@@ -65,13 +67,32 @@ func (j *TestJob) Execute() error {
 	return errors.New("unexpectedly called Execute")
 }
 
-// Bytes ...
 func (j *TestJob) Bytes() []byte {
 	if j.BytesF != nil {
 		return j.BytesF()
 	}
 	if j.CantBytes && j.T != nil {
 		j.T.Fatalf("Unexpectedly called Bytes")
+	}
+	return nil
+}
+
+func (j *TestJob) DispatchID() ids.ID {
+	if j.DispatchIDF != nil {
+		return j.DispatchIDF()
+	}
+	if j.CantDispatchID && j.T != nil {
+		j.T.Fatalf("Unexpectedly called DispatchID")
+	}
+	return ids.ID{}
+}
+
+func (j *TestJob) DispatchBytes() []byte {
+	if j.DispatchBytesF != nil {
+		return j.DispatchBytesF()
+	}
+	if j.CantDispatchBytes && j.T != nil {
+		j.T.Fatalf("Unexpectedly called DispatchBytes")
 	}
 	return nil
 }

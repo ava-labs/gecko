@@ -22,7 +22,7 @@ func TestUTXOIDVerifyNil(t *testing.T) {
 func TestUTXOID(t *testing.T) {
 	c := linearcodec.NewDefault()
 	manager := codec.NewDefaultManager()
-	if err := manager.RegisterCodec(codecVersion, c); err != nil {
+	if err := manager.RegisterCodec(1, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -40,7 +40,7 @@ func TestUTXOID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bytes, err := manager.Marshal(codecVersion, &utxoID)
+	bytes, err := manager.Marshal(1, &utxoID)
 	if err != nil {
 		t.Fatal(err)
 	}

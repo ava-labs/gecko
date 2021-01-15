@@ -79,4 +79,6 @@ func (b *blockJob) Execute() error {
 	}
 	return nil
 }
-func (b *blockJob) Bytes() []byte { return b.blk.Bytes() }
+func (b *blockJob) Bytes() []byte         { return b.blk.Bytes() }
+func (b *blockJob) DispatchID() ids.ID    { return b.blk.ID() }
+func (b *blockJob) DispatchBytes() []byte { return b.blk.Bytes() }

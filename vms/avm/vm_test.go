@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ava-labs/avalanchego/api/keystore"
 	"github.com/ava-labs/avalanchego/chains/atomic"
@@ -79,6 +80,8 @@ func NewContext(tb testing.TB) *snow.Context {
 	ctx.ChainID = chainID
 	ctx.AVAXAssetID = tx.ID()
 	ctx.XChainID = ids.Empty.Prefix(0)
+	ctx.EpochFirstTransition = time.Date(2020, 12, 10, 0, 0, 0, 0, time.UTC)
+	ctx.EpochDuration = time.Hour
 	aliaser := ctx.BCLookup.(*ids.Aliaser)
 
 	errs := wrappers.Errs{}
@@ -107,8 +110,10 @@ func NewContext(tb testing.TB) *snow.Context {
 func GetAVAXTxFromGenesisTest(genesisBytes []byte, tb testing.TB) *Tx {
 	_, c := setupCodec()
 	genesis := Genesis{}
-	if _, err := c.Unmarshal(genesisBytes, &genesis); err != nil {
+	if version, err := c.Unmarshal(genesisBytes, &genesis); err != nil {
 		tb.Fatal(err)
+	} else if version != preApricotCodecVersion {
+		tb.Fatalf("expected codec version %d but got %d", preApricotCodecVersion, version)
 	}
 
 	if len(genesis.Txs) == 0 {
@@ -170,14 +175,14 @@ func BuildGenesisTest(tb testing.TB) []byte {
 				Symbol: "MVCA",
 				InitialState: map[string][]interface{}{
 					"variableCap": {
-						Owners{
+						Minters{
 							Threshold: 1,
 							Minters: []string{
 								addr0Str,
 								addr1Str,
 							},
 						},
-						Owners{
+						Minters{
 							Threshold: 2,
 							Minters: []string{
 								addr0Str,
@@ -192,7 +197,7 @@ func BuildGenesisTest(tb testing.TB) []byte {
 				Name: "myOtherVarCapAsset",
 				InitialState: map[string][]interface{}{
 					"variableCap": {
-						Owners{
+						Minters{
 							Threshold: 1,
 							Minters: []string{
 								addr0Str,
@@ -327,9 +332,9 @@ func NewTx(t *testing.T, genesisBytes []byte, vm *VM) *Tx {
 }
 
 func TestTxSerialization(t *testing.T) {
-	expected := []byte{
+	currentCodecExpected := []byte{
 		// Codec version:
-		0x00, 0x00,
+		0x00, 0x01,
 		// txID:
 		0x00, 0x00, 0x00, 0x01,
 		// networkID:
@@ -347,9 +352,9 @@ func TestTxSerialization(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// fxID:
-		0x00, 0x00, 0x00, 0x07,
 		// secp256k1 Transferable Output:
+		// type ID:
+		0x00, 0x01, 0x00, 0x02,
 		// amount:
 		0x00, 0x00, 0x12, 0x30, 0x9c, 0xe5, 0x40, 0x00,
 		// locktime:
@@ -369,7 +374,7 @@ func TestTxSerialization(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		// fxID:
-		0x00, 0x00, 0x00, 0x07,
+		0x00, 0x01, 0x00, 0x02,
 		// secp256k1 Transferable Output:
 		// amount:
 		0x00, 0x00, 0x12, 0x30, 0x9c, 0xe5, 0x40, 0x00,
@@ -390,6 +395,121 @@ func TestTxSerialization(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		// fxID:
+		0x00, 0x01, 0x00, 0x02,
+		// secp256k1 Transferable Output:
+		// amount:
+		0x00, 0x00, 0x12, 0x30, 0x9c, 0xe5, 0x40, 0x00,
+		// locktime:
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// threshold:
+		0x00, 0x00, 0x00, 0x01,
+		// number of addresses:
+		0x00, 0x00, 0x00, 0x01,
+		// address[0]:
+		0xf2, 0x42, 0x08, 0x46, 0x87, 0x6e, 0x69, 0xf4,
+		0x73, 0xdd, 0xa2, 0x56, 0x17, 0x29, 0x67, 0xe9,
+		0x92, 0xf0, 0xee, 0x31,
+		// number of inputs:
+		0x00, 0x00, 0x00, 0x00,
+		// Memo length:
+		0x00, 0x00, 0x00, 0x04,
+		// Memo:
+		0x00, 0x01, 0x02, 0x03,
+		// name length:
+		0x00, 0x04,
+		// name:
+		'n', 'a', 'm', 'e',
+		// symbol length:
+		0x00, 0x04,
+		// symbol:
+		's', 'y', 'm', 'b',
+		// denomination
+		0x00,
+		// number of initial states:
+		0x00, 0x00, 0x00, 0x01,
+		// fx index:
+		0x00, 0x00, 0x00, 0x00,
+		// number of outputs:
+		0x00, 0x00, 0x00, 0x01,
+		// secp256k1 Mint Output:
+		//  type ID:
+		0x00, 0x01, 0x00, 0x01,
+		// locktime:
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// threshold:
+		0x00, 0x00, 0x00, 0x01,
+		// number of addresses:
+		0x00, 0x00, 0x00, 0x01,
+		// address[0]:
+		0xfc, 0xed, 0xa8, 0xf9, 0x0f, 0xcb, 0x5d, 0x30,
+		0x61, 0x4b, 0x99, 0xd7, 0x9f, 0xc4, 0xba, 0xa2,
+		0x93, 0x07, 0x76, 0x26,
+		// number of credentials:
+		0x00, 0x00, 0x00, 0x00,
+	}
+	oldCodecExpected := []byte{
+		// Codec version:
+		0x00, 0x00,
+		// txID:
+		0x00, 0x00, 0x00, 0x01,
+		// networkID:
+		0x00, 0x00, 0x00, 0x0a,
+		// chainID:
+		0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// number of outs:
+		0x00, 0x00, 0x00, 0x03,
+		// output[0]:
+		// assetID:
+		0x01, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// secp256k1 Transferable Output:
+		// type ID:
+		0x00, 0x00, 0x00, 0x07,
+		// amount:
+		0x00, 0x00, 0x12, 0x30, 0x9c, 0xe5, 0x40, 0x00,
+		// locktime:
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// threshold:
+		0x00, 0x00, 0x00, 0x01,
+		// number of addresses
+		0x00, 0x00, 0x00, 0x01,
+		// address[0]
+		0xfc, 0xed, 0xa8, 0xf9, 0x0f, 0xcb, 0x5d, 0x30,
+		0x61, 0x4b, 0x99, 0xd7, 0x9f, 0xc4, 0xba, 0xa2,
+		0x93, 0x07, 0x76, 0x26,
+		// output[1]:
+		// assetID:
+		0x01, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// type ID:
+		0x00, 0x00, 0x00, 0x07,
+		// secp256k1 Transferable Output:
+		// amount:
+		0x00, 0x00, 0x12, 0x30, 0x9c, 0xe5, 0x40, 0x00,
+		// locktime:
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// threshold:
+		0x00, 0x00, 0x00, 0x01,
+		// number of addresses:
+		0x00, 0x00, 0x00, 0x01,
+		// address[0]:
+		0x6e, 0xad, 0x69, 0x3c, 0x17, 0xab, 0xb1, 0xbe,
+		0x42, 0x2b, 0xb5, 0x0b, 0x30, 0xb9, 0x71, 0x1f,
+		0xf9, 0x8d, 0x66, 0x7e,
+		// output[2]:
+		// assetID:
+		0x01, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// type ID:
 		0x00, 0x00, 0x00, 0x07,
 		// secp256k1 Transferable Output:
 		// amount:
@@ -426,9 +546,9 @@ func TestTxSerialization(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00,
 		// number of outputs:
 		0x00, 0x00, 0x00, 0x01,
-		// fxID:
-		0x00, 0x00, 0x00, 0x06,
 		// secp256k1 Mint Output:
+		//  type ID:
+		0x00, 0x00, 0x00, 0x06,
 		// locktime:
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		// threshold:
@@ -483,13 +603,22 @@ func TestTxSerialization(t *testing.T) {
 	}
 
 	_, c := setupCodec()
+
 	if err := tx.SignSECP256K1Fx(c, nil); err != nil {
 		t.Fatal(err)
 	}
-
 	result := tx.Bytes()
-	if !bytes.Equal(expected, result) {
-		t.Fatalf("\nExpected: 0x%x\nResult:   0x%x", expected, result)
+	if !bytes.Equal(oldCodecExpected, result) {
+		t.Fatalf("\nExpected: 0x%x\nResult:   0x%x", oldCodecExpected, result)
+	}
+
+	tx.Version = apricotCodecVersion
+	if err := tx.SignSECP256K1Fx(c, nil); err != nil {
+		t.Fatal(err)
+	}
+	result = tx.Bytes()
+	if !bytes.Equal(currentCodecExpected, result) {
+		t.Fatalf("\nExpected: 0x%x\nResult:   0x%x", currentCodecExpected, result)
 	}
 }
 
@@ -1052,7 +1181,7 @@ func TestIssueProperty(t *testing.T) {
 		}},
 	}}
 
-	unsignedBytes, err := vm.codec.Marshal(codecVersion, &mintPropertyTx.UnsignedTx)
+	unsignedBytes, err := vm.codec.Marshal(apricotCodecVersion, &mintPropertyTx.UnsignedTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1071,7 +1200,7 @@ func TestIssueProperty(t *testing.T) {
 		}},
 	})
 
-	signedBytes, err := vm.codec.Marshal(codecVersion, mintPropertyTx)
+	signedBytes, err := vm.codec.Marshal(apricotCodecVersion, mintPropertyTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1098,11 +1227,11 @@ func TestIssueProperty(t *testing.T) {
 
 	burnPropertyTx.Creds = append(burnPropertyTx.Creds, &propertyfx.Credential{})
 
-	unsignedBytes, err = vm.codec.Marshal(codecVersion, burnPropertyTx.UnsignedTx)
+	unsignedBytes, err = vm.codec.Marshal(apricotCodecVersion, burnPropertyTx.UnsignedTx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signedBytes, err = vm.codec.Marshal(codecVersion, burnPropertyTx)
+	signedBytes, err = vm.codec.Marshal(apricotCodecVersion, burnPropertyTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1285,13 +1414,13 @@ func TestTxVerifyAfterIssueTx(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedSecondTx.Verify(); err != nil {
+	if err := parsedSecondTx.Verify(0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := vm.IssueTx(firstTx.Bytes()); err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedSecondTx.Accept(); err != nil {
+	if err := parsedSecondTx.Accept(0); err != nil {
 		t.Fatal(err)
 	}
 	ctx.Lock.Unlock()
@@ -1308,7 +1437,7 @@ func TestTxVerifyAfterIssueTx(t *testing.T) {
 	}
 	parsedFirstTx := txs[0]
 
-	if err := parsedFirstTx.Verify(); err == nil {
+	if err := parsedFirstTx.Verify(0); err == nil {
 		t.Fatalf("Should have errored due to a missing UTXO")
 	}
 }
@@ -1395,7 +1524,7 @@ func TestTxVerifyAfterGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedSecondTx.Verify(); err != nil {
+	if err := parsedSecondTx.Verify(0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := vm.IssueTx(firstTx.Bytes()); err != nil {
@@ -1405,10 +1534,10 @@ func TestTxVerifyAfterGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedSecondTx.Accept(); err != nil {
+	if err := parsedSecondTx.Accept(0); err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedFirstTx.Verify(); err == nil {
+	if err := parsedFirstTx.Verify(0); err == nil {
 		t.Fatalf("Should have errored due to a missing UTXO")
 	}
 }
@@ -1528,7 +1657,7 @@ func TestTxVerifyAfterVerifyAncestorTx(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedSecondTx.Verify(); err != nil {
+	if err := parsedSecondTx.Verify(0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := vm.IssueTx(firstTx.Bytes()); err != nil {
@@ -1541,10 +1670,243 @@ func TestTxVerifyAfterVerifyAncestorTx(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedSecondTx.Accept(); err != nil {
+	if err := parsedSecondTx.Accept(0); err != nil {
 		t.Fatal(err)
 	}
-	if err := parsedFirstTx.Verify(); err == nil {
+	if err := parsedFirstTx.Verify(0); err == nil {
 		t.Fatalf("Should have errored due to a missing UTXO")
+	}
+}
+
+func TestTxAcceptLaterEpoch(t *testing.T) {
+	genesisBytes, _, vm, _ := GenesisVM(t)
+	ctx := vm.ctx
+	defer func() {
+		if err := vm.Shutdown(); err != nil {
+			t.Fatal(err)
+		}
+		ctx.Lock.Unlock()
+	}()
+
+	avaxTx := GetAVAXTxFromGenesisTest(genesisBytes, t)
+	key := keys[0]
+	tx := &Tx{UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
+		NetworkID:    networkID,
+		BlockchainID: chainID,
+		Ins: []*avax.TransferableInput{{
+			UTXOID: avax.UTXOID{
+				TxID:        avaxTx.ID(),
+				OutputIndex: 2,
+			},
+			Asset: avax.Asset{ID: avaxTx.ID()},
+			In: &secp256k1fx.TransferInput{
+				Amt: startBalance,
+				Input: secp256k1fx.Input{
+					SigIndices: []uint32{
+						0,
+					},
+				},
+			},
+		}},
+		Outs: []*avax.TransferableOutput{{
+			Asset: avax.Asset{ID: avaxTx.ID()},
+			Out: &secp256k1fx.TransferOutput{
+				Amt: startBalance - vm.txFee,
+				OutputOwners: secp256k1fx.OutputOwners{
+					Threshold: 1,
+					Addrs:     []ids.ShortID{key.PublicKey().Address()},
+				},
+			},
+		}},
+	}}}
+	if err := tx.SignSECP256K1Fx(vm.codec, [][]*crypto.PrivateKeySECP256K1R{{key}}); err != nil {
+		t.Fatal(err)
+	}
+
+	parsedTx, err := vm.Parse(tx.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := parsedTx.Verify(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := parsedTx.Accept(1); err != nil {
+		t.Fatal(err)
+	}
+	if epoch := parsedTx.Epoch(); epoch != 1 {
+		t.Fatalf("Should have returned epoch %d but returned %d", 1, epoch)
+	}
+	if err := parsedTx.Verify(2); err == nil {
+		t.Fatalf("Should have errored due to having been accepted into a different epoch")
+	}
+}
+
+func TestVerifyTxEarlierEpoch(t *testing.T) {
+	genesisBytes, _, vm, _ := GenesisVM(t)
+	ctx := vm.ctx
+	defer func() {
+		if err := vm.Shutdown(); err != nil {
+			t.Fatal(err)
+		}
+		ctx.Lock.Unlock()
+	}()
+
+	avaxTxID := GetAVAXTxFromGenesisTest(genesisBytes, t).ID()
+
+	factory := crypto.FactorySECP256K1R{}
+	keyIntf, err := factory.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := keyIntf.(*crypto.PrivateKeySECP256K1R)
+
+	firstTx := &Tx{UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
+		NetworkID:    networkID,
+		BlockchainID: chainID,
+		Ins: []*avax.TransferableInput{{
+			UTXOID: avax.UTXOID{
+				TxID:        avaxTxID,
+				OutputIndex: 2,
+			},
+			Asset: avax.Asset{ID: avaxTxID},
+			In: &secp256k1fx.TransferInput{
+				Amt: startBalance,
+				Input: secp256k1fx.Input{
+					SigIndices: []uint32{
+						0,
+					},
+				},
+			},
+		}},
+		Outs: []*avax.TransferableOutput{{
+			Asset: avax.Asset{ID: avaxTxID},
+			Out: &secp256k1fx.TransferOutput{
+				Amt: startBalance - vm.txFee,
+				OutputOwners: secp256k1fx.OutputOwners{
+					Threshold: 1,
+					Addrs:     []ids.ShortID{key.PublicKey().Address()},
+				},
+			},
+		}},
+	}}}
+
+	genesisKey := keys[0]
+	if err := firstTx.SignSECP256K1Fx(vm.codec, [][]*crypto.PrivateKeySECP256K1R{{genesisKey}}); err != nil {
+		t.Fatal(err)
+	}
+
+	firstParsedTx, err := vm.Parse(firstTx.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := firstParsedTx.Verify(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := firstParsedTx.Accept(1); err != nil {
+		t.Fatal(err)
+	}
+	if epoch := firstParsedTx.Epoch(); epoch != 1 {
+		t.Fatalf("Should have returned epoch %d but returned %d", 1, epoch)
+	}
+
+	secondTx := &Tx{UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
+		NetworkID:    networkID,
+		BlockchainID: chainID,
+		Ins: []*avax.TransferableInput{{
+			UTXOID: avax.UTXOID{
+				TxID:        firstParsedTx.ID(),
+				OutputIndex: 0,
+			},
+			Asset: avax.Asset{ID: avaxTxID},
+			In: &secp256k1fx.TransferInput{
+				Amt: startBalance - vm.txFee,
+				Input: secp256k1fx.Input{
+					SigIndices: []uint32{
+						0,
+					},
+				},
+			},
+		}},
+	}}}
+
+	if err := secondTx.SignSECP256K1Fx(vm.codec, [][]*crypto.PrivateKeySECP256K1R{{key}}); err != nil {
+		t.Fatal(err)
+	}
+
+	secondParsedTx, err := vm.Parse(secondTx.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secondParsedTx.Verify(0); err == nil {
+		t.Fatalf("Should have errored due to using a future epoch's UTXO")
+	}
+}
+
+func TestRejectionManagement(t *testing.T) {
+	genesisBytes, _, vm, _ := GenesisVM(t)
+	ctx := vm.ctx
+	defer func() {
+		if err := vm.Shutdown(); err != nil {
+			t.Fatal(err)
+		}
+		ctx.Lock.Unlock()
+	}()
+
+	avaxTx := GetAVAXTxFromGenesisTest(genesisBytes, t)
+	key := keys[0]
+	tx := &Tx{UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
+		NetworkID:    networkID,
+		BlockchainID: chainID,
+		Ins: []*avax.TransferableInput{{
+			UTXOID: avax.UTXOID{
+				TxID:        avaxTx.ID(),
+				OutputIndex: 2,
+			},
+			Asset: avax.Asset{ID: avaxTx.ID()},
+			In: &secp256k1fx.TransferInput{
+				Amt: startBalance,
+				Input: secp256k1fx.Input{
+					SigIndices: []uint32{
+						0,
+					},
+				},
+			},
+		}},
+		Outs: []*avax.TransferableOutput{{
+			Asset: avax.Asset{ID: avaxTx.ID()},
+			Out: &secp256k1fx.TransferOutput{
+				Amt: startBalance - vm.txFee,
+				OutputOwners: secp256k1fx.OutputOwners{
+					Threshold: 1,
+					Addrs:     []ids.ShortID{key.PublicKey().Address()},
+				},
+			},
+		}},
+	}}}
+	if err := tx.SignSECP256K1Fx(vm.codec, [][]*crypto.PrivateKeySECP256K1R{{key}}); err != nil {
+		t.Fatal(err)
+	}
+
+	parsedTx, err := vm.Parse(tx.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := parsedTx.Verify(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := parsedTx.Verify(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := parsedTx.Reject(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := parsedTx.Accept(1); err != nil {
+		t.Fatal(err)
+	}
+	if epoch := parsedTx.Epoch(); epoch != 1 {
+		t.Fatalf("Should have returned epoch %d but returned %d", 1, epoch)
+	}
+	if err := parsedTx.Verify(2); err == nil {
+		t.Fatalf("Should have errored due to having been accepted into a different epoch")
 	}
 }

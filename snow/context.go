@@ -101,16 +101,18 @@ func DefaultContextTest() *Context {
 	aliaser := &ids.Aliaser{}
 	aliaser.Initialize()
 	return &Context{
-		NetworkID:           0,
-		SubnetID:            ids.Empty,
-		ChainID:             ids.Empty,
-		NodeID:              ids.ShortEmpty,
-		Log:                 logging.NoLog{},
-		DecisionDispatcher:  emptyEventDispatcher{},
-		ConsensusDispatcher: emptyEventDispatcher{},
-		BCLookup:            aliaser,
-		Namespace:           "",
-		Metrics:             prometheus.NewRegistry(),
+		NetworkID:            0,
+		SubnetID:             ids.Empty,
+		ChainID:              ids.Empty,
+		NodeID:               ids.ShortEmpty,
+		Log:                  logging.NoLog{},
+		DecisionDispatcher:   emptyEventDispatcher{},
+		ConsensusDispatcher:  emptyEventDispatcher{},
+		BCLookup:             aliaser,
+		Namespace:            "",
+		Metrics:              prometheus.NewRegistry(),
+		EpochFirstTransition: time.Date(3000, 0, 0, 0, 0, 0, 0, time.UTC),
+		EpochDuration:        time.Hour,
 	}
 }
 

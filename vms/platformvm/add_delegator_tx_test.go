@@ -175,6 +175,7 @@ func TestAddDelegatorTxSemanticVerify(t *testing.T) {
 		}
 		vm.Ctx.Lock.Unlock()
 	}()
+
 	nodeID := keys[0].PublicKey().Address()
 	rewardAddress := nodeID
 	vdb := versiondb.New(vm.DB) // so tests don't interfere with one another

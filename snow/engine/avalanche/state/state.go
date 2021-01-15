@@ -95,6 +95,46 @@ func (s *state) SetStatus(id ids.ID, status choices.Status) error {
 	return s.db.Put(id[:], p.Bytes)
 }
 
+func (s *state) Int(id ids.ID) uint32 {
+	if valIntf, found := s.dbCache.Get(id); found {
+		val, _ := valIntf.(uint32)
+		return val
+	}
+
+	if b, err := s.db.Get(id[:]); err == nil {
+		// The key was in the database
+		p := wrappers.Packer{Bytes: b}
+		status := p.UnpackInt()
+		if p.Offset == len(b) && !p.Errored() {
+			s.dbCache.Put(id, status)
+			return status
+		}
+		s.serializer.ctx.Log.Error("Parsing failed on saved int.\nPrefixed key = %s\nBytes = \n%s",
+			id,
+			formatting.DumpBytes{Bytes: b})
+	}
+
+	s.dbCache.Put(id, 0)
+	return 0
+}
+
+func (s *state) SetInt(id ids.ID, val uint32) error {
+	s.dbCache.Put(id, val)
+
+	if val == 0 {
+		return s.db.Delete(id[:])
+	}
+
+	p := wrappers.Packer{Bytes: make([]byte, 4)}
+
+	p.PackInt(val)
+
+	s.serializer.ctx.Log.AssertNoError(p.Err)
+	s.serializer.ctx.Log.AssertTrue(p.Offset == len(p.Bytes), "Wrong offset after packing")
+
+	return s.db.Put(id[:], p.Bytes)
+}
+
 func (s *state) Edge(id ids.ID) []ids.ID {
 	if frontierIntf, found := s.dbCache.Get(id); found {
 		frontier, _ := frontierIntf.([]ids.ID)

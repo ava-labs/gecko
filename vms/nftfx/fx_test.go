@@ -649,7 +649,7 @@ func TestFxVerifyTransfer(t *testing.T) {
 	if err := fx.Initialize(&vm); err != nil {
 		t.Fatal(err)
 	}
-	if err := fx.VerifyTransfer(nil, nil, nil, nil); err == nil {
+	if err := fx.VerifyTransfer(nil, nil); err == nil {
 		t.Fatalf("this Fx doesn't support transfers")
 	}
 }

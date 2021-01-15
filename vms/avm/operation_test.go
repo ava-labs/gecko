@@ -24,7 +24,7 @@ func (o *testOperable) Outs() []verify.State { return o.Outputs }
 func TestOperationVerifyNil(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,7 +37,7 @@ func TestOperationVerifyNil(t *testing.T) {
 func TestOperationVerifyEmpty(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,7 +52,7 @@ func TestOperationVerifyEmpty(t *testing.T) {
 func TestOperationVerifyUTXOIDsNotSorted(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestOperationVerifyUTXOIDsNotSorted(t *testing.T) {
 func TestOperationVerify(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,7 +105,7 @@ func TestOperationSorting(t *testing.T) {
 	}
 
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,11 +131,11 @@ func TestOperationSorting(t *testing.T) {
 			Op: &testOperable{},
 		},
 	}
-	if isSortedAndUniqueOperations(ops, m) {
+	if isSortedAndUniqueOperations(ops, m, apricotCodecVersion) {
 		t.Fatalf("Shouldn't be sorted")
 	}
-	sortOperations(ops, m)
-	if !isSortedAndUniqueOperations(ops, m) {
+	sortOperations(ops, m, apricotCodecVersion)
+	if !isSortedAndUniqueOperations(ops, m, apricotCodecVersion) {
 		t.Fatalf("Should be sorted")
 	}
 	ops = append(ops, &Operation{
@@ -148,7 +148,7 @@ func TestOperationSorting(t *testing.T) {
 		},
 		Op: &testOperable{},
 	})
-	if isSortedAndUniqueOperations(ops, m) {
+	if isSortedAndUniqueOperations(ops, m, apricotCodecVersion) {
 		t.Fatalf("Shouldn't be unique")
 	}
 }

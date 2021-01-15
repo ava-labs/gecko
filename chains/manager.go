@@ -402,8 +402,8 @@ func (m *manager) createAvalancheChain(
 	db := prefixdb.New(ctx.ChainID[:], m.DB)
 	vmDB := prefixdb.New([]byte("vm"), db)
 	vertexDB := prefixdb.New([]byte("vertex"), db)
-	vertexBootstrappingDB := prefixdb.New([]byte("vertex_bs"), db)
-	txBootstrappingDB := prefixdb.New([]byte("tx_bs"), db)
+	vertexBootstrappingDB := prefixdb.New([]byte("vertex_bs-v2"), db)
+	txBootstrappingDB := prefixdb.New([]byte("tx_bs-v2"), db)
 
 	vtxBlocker, err := queue.New(vertexBootstrappingDB)
 	if err != nil {
@@ -513,7 +513,7 @@ func (m *manager) createSnowmanChain(
 
 	db := prefixdb.New(ctx.ChainID[:], m.DB)
 	vmDB := prefixdb.New([]byte("vm"), db)
-	bootstrappingDB := prefixdb.New([]byte("bs"), db)
+	bootstrappingDB := prefixdb.New([]byte("bs-v2"), db)
 
 	blocked, err := queue.New(bootstrappingDB)
 	if err != nil {

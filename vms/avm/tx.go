@@ -4,6 +4,7 @@
 package avm
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ava-labs/avalanchego/codec"
@@ -16,6 +17,10 @@ import (
 	"github.com/ava-labs/avalanchego/vms/components/verify"
 	"github.com/ava-labs/avalanchego/vms/nftfx"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
+)
+
+var (
+	errUnsupportedCodecVersionInEpoch = errors.New("unsupported codec version for epoch")
 )
 
 // UnsignedTx ...
@@ -35,12 +40,14 @@ type UnsignedTx interface {
 	SyntacticVerify(
 		ctx *snow.Context,
 		c codec.Manager,
+		codecVersion uint16,
 		txFeeAssetID ids.ID,
 		txFee uint64,
 		creationTxFee uint64,
 		numFxs int,
+		epoch uint32,
 	) error
-	SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiable) error
+	SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiable, epoch uint32) error
 	ExecuteWithSideEffects(vm *VM, batch database.Batch) error
 }
 
@@ -50,9 +57,9 @@ type UnsignedTx interface {
 // attempting to consume and the inputs consume sufficient state to produce the
 // outputs.
 type Tx struct {
+	Version    uint16 `json:"version"`
 	UnsignedTx `serialize:"true" json:"unsignedTx"`
-
-	Creds []verify.Verifiable `serialize:"true" json:"credentials"` // The credentials of this transaction
+	Creds      []verify.Verifiable `serialize:"true" json:"credentials"` // The credentials of this transaction
 }
 
 // Credentials describes the authorization that allows the Inputs to consume the
@@ -67,12 +74,17 @@ func (t *Tx) SyntacticVerify(
 	txFee uint64,
 	creationTxFee uint64,
 	numFxs int,
+	epoch uint32,
 ) error {
 	if t == nil || t.UnsignedTx == nil {
 		return errNilTx
 	}
 
-	if err := t.UnsignedTx.SyntacticVerify(ctx, c, txFeeAssetID, txFee, creationTxFee, numFxs); err != nil {
+	if t.Version == apricotCodecVersion && epoch == 0 {
+		return errUnsupportedCodecVersionInEpoch
+	}
+
+	if err := t.UnsignedTx.SyntacticVerify(ctx, c, t.Version, txFeeAssetID, txFee, creationTxFee, numFxs, epoch); err != nil {
 		return err
 	}
 
@@ -92,17 +104,17 @@ func (t *Tx) SyntacticVerify(
 }
 
 // SemanticVerify verifies that this transaction is well-formed.
-func (t *Tx) SemanticVerify(vm *VM, tx UnsignedTx) error {
+func (t *Tx) SemanticVerify(vm *VM, tx UnsignedTx, epoch uint32) error {
 	if t == nil {
 		return errNilTx
 	}
 
-	return t.UnsignedTx.SemanticVerify(vm, tx, t.Creds)
+	return t.UnsignedTx.SemanticVerify(vm, tx, t.Creds, epoch)
 }
 
 // SignSECP256K1Fx ...
 func (t *Tx) SignSECP256K1Fx(c codec.Manager, signers [][]*crypto.PrivateKeySECP256K1R) error {
-	unsignedBytes, err := c.Marshal(codecVersion, &t.UnsignedTx)
+	unsignedBytes, err := c.Marshal(t.Version, &t.UnsignedTx)
 	if err != nil {
 		return fmt.Errorf("problem creating transaction: %w", err)
 	}
@@ -122,7 +134,7 @@ func (t *Tx) SignSECP256K1Fx(c codec.Manager, signers [][]*crypto.PrivateKeySECP
 		t.Creds = append(t.Creds, cred)
 	}
 
-	signedBytes, err := c.Marshal(codecVersion, t)
+	signedBytes, err := c.Marshal(t.Version, t)
 	if err != nil {
 		return fmt.Errorf("problem creating transaction: %w", err)
 	}
@@ -132,7 +144,7 @@ func (t *Tx) SignSECP256K1Fx(c codec.Manager, signers [][]*crypto.PrivateKeySECP
 
 // SignNFTFx ...
 func (t *Tx) SignNFTFx(c codec.Manager, signers [][]*crypto.PrivateKeySECP256K1R) error {
-	unsignedBytes, err := c.Marshal(codecVersion, &t.UnsignedTx)
+	unsignedBytes, err := c.Marshal(t.Version, &t.UnsignedTx)
 	if err != nil {
 		return fmt.Errorf("problem creating transaction: %w", err)
 	}
@@ -152,7 +164,7 @@ func (t *Tx) SignNFTFx(c codec.Manager, signers [][]*crypto.PrivateKeySECP256K1R
 		t.Creds = append(t.Creds, cred)
 	}
 
-	signedBytes, err := c.Marshal(codecVersion, t)
+	signedBytes, err := c.Marshal(t.Version, t)
 	if err != nil {
 		return fmt.Errorf("problem creating transaction: %w", err)
 	}

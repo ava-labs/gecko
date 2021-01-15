@@ -35,10 +35,12 @@ type ExportTx struct {
 func (t *ExportTx) SyntacticVerify(
 	ctx *snow.Context,
 	c codec.Manager,
+	codecVersion uint16,
 	txFeeAssetID ids.ID,
 	txFee uint64,
 	_ uint64,
 	_ int,
+	_ uint32,
 ) error {
 	switch {
 	case t == nil:
@@ -60,11 +62,12 @@ func (t *ExportTx) SyntacticVerify(
 			t.ExportedOuts,
 		},
 		c,
+		codecVersion,
 	)
 }
 
 // SemanticVerify that this transaction is valid to be spent.
-func (t *ExportTx) SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiable) error {
+func (t *ExportTx) SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiable, epoch uint32) error {
 	subnetID, err := vm.ctx.SNLookup.SubnetID(t.DestinationChain)
 	if err != nil {
 		return err
@@ -87,7 +90,7 @@ func (t *ExportTx) SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiab
 		}
 	}
 
-	return t.BaseTx.SemanticVerify(vm, tx, creds)
+	return t.BaseTx.SemanticVerify(vm, tx, creds, epoch)
 }
 
 // ExecuteWithSideEffects writes the batch with any additional side effects
@@ -105,7 +108,9 @@ func (t *ExportTx) ExecuteWithSideEffects(vm *VM, batch database.Batch) error {
 			Out:   out.Out,
 		}
 
-		utxoBytes, err := vm.codec.Marshal(codecVersion, utxo)
+		// Use the old codec version because the P-Chain/C-Chain is still
+		// using the old codec version
+		utxoBytes, err := vm.codec.Marshal(preApricotCodecVersion, utxo)
 		if err != nil {
 			return err
 		}

@@ -42,29 +42,36 @@ func (c *Client) IssueTx(txBytes []byte) (ids.ID, error) {
 	return res.TxID, err
 }
 
-// GetTxStatus returns the status of [txID]
-func (c *Client) GetTxStatus(txID ids.ID) (choices.Status, error) {
+// GetTxStatus returns the status of [txID] and if accepted, the [epoch]
+// that it was accepted in. If the status is not accepted, then the value
+// of the returned [epoch] is not defined.
+func (c *Client) GetTxStatus(txID ids.ID) (choices.Status, uint32, error) {
 	res := &GetTxStatusReply{}
 	err := c.requester.SendRequest("getTxStatus", &api.JSONTxID{
 		TxID: txID,
 	}, res)
-	return res.Status, err
+	var epoch uint32
+	if res.Epoch != nil {
+		epoch = *res.Epoch
+	}
+	return res.Status, epoch, err
 }
 
 // ConfirmTx attempts to confirm [txID] by checking its status [attempts] times
-// with a [delay] in between each attempt. If the transaction has not been decided
-// by the final attempt, it returns the status of the last attempt.
-// Note: ConfirmTx will block until either the last attempt finishes or the client
-// returns a decided status.
-func (c *Client) ConfirmTx(txID ids.ID, attempts int, delay time.Duration) (choices.Status, error) {
+// with a [delay] in between each attempt. If the transaction has not been
+// decided by the final attempt, it returns the status of the last attempt.
+// If the status is not accepted, the returned epoch is undefined.
+// Note: ConfirmTx will block until either the last attempt finishes or the
+// client returns a decided status.
+func (c *Client) ConfirmTx(txID ids.ID, attempts int, delay time.Duration) (choices.Status, uint32, error) {
 	for i := 0; i < attempts-1; i++ {
-		status, err := c.GetTxStatus(txID)
+		status, epoch, err := c.GetTxStatus(txID)
 		if err != nil {
-			return status, err
+			return status, epoch, err
 		}
 
 		if status.Decided() {
-			return status, nil
+			return status, epoch, nil
 		}
 		time.Sleep(delay)
 	}
@@ -161,7 +168,8 @@ func (c *Client) CreateAsset(
 	symbol string,
 	denomination byte,
 	holders []*Holder,
-	minters []Owners,
+	minters []Minters,
+	manager Manager,
 ) (ids.ID, error) {
 	res := &FormattedAssetID{}
 	err := c.requester.SendRequest("createAsset", &CreateAssetArgs{
@@ -175,6 +183,7 @@ func (c *Client) CreateAsset(
 		Denomination:   denomination,
 		InitialHolders: holders,
 		MinterSets:     minters,
+		Manager:        manager,
 	}, res)
 	return res.AssetID, err
 }
@@ -212,7 +221,7 @@ func (c *Client) CreateVariableCapAsset(
 	name,
 	symbol string,
 	denomination byte,
-	minters []Owners,
+	minters []Minters,
 ) (ids.ID, error) {
 	res := &FormattedAssetID{}
 	err := c.requester.SendRequest("createAsset", &CreateAssetArgs{
@@ -236,7 +245,7 @@ func (c *Client) CreateNFTAsset(
 	changeAddr,
 	name,
 	symbol string,
-	minters []Owners,
+	minters []Minters,
 ) (ids.ID, error) {
 	res := &FormattedAssetID{}
 	err := c.requester.SendRequest("createNFTAsset", &CreateNFTAssetArgs{
@@ -311,6 +320,63 @@ func (c *Client) Send(
 		Memo: memo,
 	}, res)
 	return res.TxID, err
+}
+
+// SendAsManager sends a managed asset using the credential of the asset manager
+// rather than the asset holder. The managed asset is sent from [from]. Managed asset
+// change is sent to [changeAddr]. Returns the ID of the tx.
+func (c *Client) SendAsManager(
+	user api.UserPass,
+	from []string,
+	changeAddr string,
+	amount uint64,
+	assetID,
+	to,
+	memo,
+	feeChangeAddr string,
+	feeFrom []string,
+) (ids.ID, error) {
+	res := &SendAsManagerResponse{}
+	err := c.requester.SendRequest("sendAsManager", &SendAsManagerArgs{
+		SendArgs: SendArgs{
+			JSONSpendHeader: api.JSONSpendHeader{
+				UserPass:       user,
+				JSONFromAddrs:  api.JSONFromAddrs{From: from},
+				JSONChangeAddr: api.JSONChangeAddr{ChangeAddr: changeAddr},
+			},
+			SendOutput: SendOutput{
+				Amount:  cjson.Uint64(amount),
+				AssetID: assetID,
+				To:      to,
+			},
+			Memo: memo,
+		},
+		FeeFrom:       feeFrom,
+		FeeChangeAddr: feeChangeAddr,
+	}, res)
+	return res.TxID, err
+}
+
+func (c *Client) UpdateManagedAsset(
+	user api.UserPass,
+	from []string,
+	changeAddr string,
+	assetID string,
+	frozen bool,
+	manager Manager,
+) (ids.ID, error) {
+	resp := &api.JSONTxIDChangeAddr{}
+	err := c.requester.SendRequest("updateManagedAsset", &UpdateManagedAssetArgs{
+		JSONSpendHeader: api.JSONSpendHeader{
+			UserPass:       user,
+			JSONFromAddrs:  api.JSONFromAddrs{From: from},
+			JSONChangeAddr: api.JSONChangeAddr{ChangeAddr: changeAddr},
+		},
+		AssetID: assetID,
+		Frozen:  frozen,
+		Manager: manager,
+	}, resp)
+	return resp.TxID, err
 }
 
 // SendMultiple sends a transaction from [user] funding all [outputs]

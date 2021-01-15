@@ -26,7 +26,7 @@ type InitialState struct {
 }
 
 // Verify implements the verify.Verifiable interface
-func (is *InitialState) Verify(c codec.Manager, numFxs int) error {
+func (is *InitialState) Verify(c codec.Manager, codecVersion uint16, numFxs int) error {
 	switch {
 	case is == nil:
 		return errNilInitialState
@@ -42,7 +42,7 @@ func (is *InitialState) Verify(c codec.Manager, numFxs int) error {
 			return err
 		}
 	}
-	if !isSortedState(is.Outs, c) {
+	if !isSortedState(is.Outs, c, codecVersion) {
 		return errOutputsNotSorted
 	}
 
@@ -50,22 +50,25 @@ func (is *InitialState) Verify(c codec.Manager, numFxs int) error {
 }
 
 // Sort ...
-func (is *InitialState) Sort(c codec.Manager) { sortState(is.Outs, c) }
+func (is *InitialState) Sort(c codec.Manager, codecVersion uint16) {
+	sortState(is.Outs, c, codecVersion)
+}
 
 type innerSortState struct {
-	vers  []verify.State
-	codec codec.Manager
+	vers         []verify.State
+	codecMgr     codec.Manager
+	codecVersion uint16
 }
 
 func (vers *innerSortState) Less(i, j int) bool {
 	iVer := vers.vers[i]
 	jVer := vers.vers[j]
 
-	iBytes, err := vers.codec.Marshal(codecVersion, &iVer)
+	iBytes, err := vers.codecMgr.Marshal(vers.codecVersion, &iVer)
 	if err != nil {
 		return false
 	}
-	jBytes, err := vers.codec.Marshal(codecVersion, &jVer)
+	jBytes, err := vers.codecMgr.Marshal(vers.codecVersion, &jVer)
 	if err != nil {
 		return false
 	}
@@ -74,11 +77,19 @@ func (vers *innerSortState) Less(i, j int) bool {
 func (vers *innerSortState) Len() int      { return len(vers.vers) }
 func (vers *innerSortState) Swap(i, j int) { v := vers.vers; v[j], v[i] = v[i], v[j] }
 
-func sortState(vers []verify.State, c codec.Manager) {
-	sort.Sort(&innerSortState{vers: vers, codec: c})
+func sortState(vers []verify.State, codecMgr codec.Manager, codecVersion uint16) {
+	sort.Sort(&innerSortState{
+		vers:         vers,
+		codecMgr:     codecMgr,
+		codecVersion: codecVersion,
+	})
 }
-func isSortedState(vers []verify.State, c codec.Manager) bool {
-	return sort.IsSorted(&innerSortState{vers: vers, codec: c})
+func isSortedState(vers []verify.State, codecMgr codec.Manager, codecVersion uint16) bool {
+	return sort.IsSorted(&innerSortState{
+		vers:         vers,
+		codecMgr:     codecMgr,
+		codecVersion: codecVersion,
+	})
 }
 
 type innerSortInitialState []*InitialState

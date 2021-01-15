@@ -101,4 +101,4 @@ func (fx *Fx) VerifyTransferOperation(tx secp256k1fx.Tx, op *BurnOperation, cred
 }
 
 // VerifyTransfer ...
-func (fx *Fx) VerifyTransfer(_, _, _, _ interface{}) error { return errCantTransfer }
+func (fx *Fx) VerifyTransfer(_, _ interface{}) error { return errCantTransfer }

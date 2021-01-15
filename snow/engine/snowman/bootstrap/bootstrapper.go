@@ -278,8 +278,10 @@ func (b *Bootstrapper) executeAll(jobs *queue.Jobs) error {
 			b.Ctx.Log.Info("executed %d blocks", numExecuted)
 		}
 
-		b.Ctx.ConsensusDispatcher.Accept(b.Ctx, job.ID(), job.Bytes())
-		b.Ctx.DecisionDispatcher.Accept(b.Ctx, job.ID(), job.Bytes())
+		jobID := job.DispatchID()
+		jobBytes := job.DispatchBytes()
+		b.Ctx.ConsensusDispatcher.Accept(b.Ctx, jobID, jobBytes)
+		b.Ctx.DecisionDispatcher.Accept(b.Ctx, jobID, jobBytes)
 	}
 	b.Ctx.Log.Info("executed %d blocks", numExecuted)
 	return nil

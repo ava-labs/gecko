@@ -68,14 +68,14 @@ func TestBuildGenesis(t *testing.T) {
 				Symbol: "MVCA",
 				InitialState: map[string][]interface{}{
 					"variableCap": {
-						Owners{
+						Minters{
 							Threshold: 1,
 							Minters: []string{
 								addrMap["A9bTQjfYGBFK3JPRJqF2eh3JYL7cHocvy"],
 								addrMap["6mxBGnjGDCKgkVe7yfrmvMA7xE7qCv3vv"],
 							},
 						},
-						Owners{
+						Minters{
 							Threshold: 2,
 							Minters: []string{
 								addrMap["6ncQ19Q2U4MamkCYzshhD8XFjfwAWFzTa"],
@@ -89,7 +89,7 @@ func TestBuildGenesis(t *testing.T) {
 				Name: "myOtherVarCapAsset",
 				InitialState: map[string][]interface{}{
 					"variableCap": {
-						Owners{
+						Minters{
 							Threshold: 1,
 							Minters: []string{
 								addrMap["A9bTQjfYGBFK3JPRJqF2eh3JYL7cHocvy"],

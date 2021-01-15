@@ -39,7 +39,7 @@ func (tx *BaseTx) Verify(ctx *snow.Context, c codec.Manager) error {
 		}
 	}
 	switch {
-	case !avax.IsSortedTransferableOutputs(tx.Outs, c):
+	case !avax.IsSortedTransferableOutputs(tx.Outs, c, codecVersion):
 		return errOutputsNotSorted
 	case !avax.IsSortedAndUniqueTransferableInputs(tx.Ins):
 		return errInputsNotSortedUnique

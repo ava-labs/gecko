@@ -9,7 +9,6 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 )
 
@@ -34,22 +33,41 @@ type UniqueTx struct {
 type TxState struct {
 	*Tx
 
-	unique, verifiedTx, verifiedState bool
-	validity                          error
+	syntacticVerfication, semanticVerification map[uint32]error
+	unique                                     bool
 
 	inputs     []ids.ID
 	inputUTXOs []*avax.UTXOID
 	utxos      []*avax.UTXO
-	deps       []snowstorm.Tx
+	deps       []ids.ID
+	setDeps    bool
 
 	status choices.Status
+	epoch  uint32
+}
+
+// newUniqueTx returns the UniqueTx representation of transaction [txID].
+// [rawTx] may be nil.
+func newUniqueTx(vm *VM, txID ids.ID, rawTx *Tx) *UniqueTx {
+	return &UniqueTx{
+		vm:   vm,
+		txID: txID,
+		TxState: &TxState{
+			Tx:                   rawTx,
+			syntacticVerfication: make(map[uint32]error),
+			semanticVerification: make(map[uint32]error),
+		},
+	}
 }
 
 func (tx *UniqueTx) refresh() {
 	tx.vm.numTxRefreshes.Inc()
 
 	if tx.TxState == nil {
-		tx.TxState = &TxState{}
+		tx.TxState = &TxState{
+			syntacticVerfication: make(map[uint32]error),
+			semanticVerification: make(map[uint32]error),
+		}
 	}
 	if tx.unique {
 		return
@@ -59,10 +77,17 @@ func (tx *UniqueTx) refresh() {
 	if unique == tx {
 		tx.vm.numTxRefreshMisses.Inc()
 
+		txID := tx.ID()
+
 		// If no one was in the cache, make sure that there wasn't an
 		// intermediate object whose state I must reflect
-		if status, err := tx.vm.state.Status(tx.ID()); err == nil {
+		if status, err := tx.vm.state.Status(txID); err == nil {
 			tx.status = status
+		}
+		if tx.status == choices.Accepted {
+			if epoch, err := tx.vm.state.Epoch(txID); err == nil {
+				tx.epoch = epoch
+			}
 		}
 		tx.unique = true
 	} else {
@@ -94,6 +119,7 @@ func (tx *UniqueTx) Evict() {
 	// Lock is already held here
 	tx.unique = false
 	tx.deps = nil
+	tx.setDeps = false
 }
 
 func (tx *UniqueTx) setStatus(status choices.Status) error {
@@ -109,7 +135,9 @@ func (tx *UniqueTx) setStatus(status choices.Status) error {
 func (tx *UniqueTx) ID() ids.ID { return tx.txID }
 
 // Accept is called when the transaction was finalized as accepted by consensus
-func (tx *UniqueTx) Accept() error {
+func (tx *UniqueTx) Accept(epoch uint32) error {
+	tx.vm.ctx.Log.Debug("Accepting tx %s into epoch %d", tx.txID, epoch)
+
 	if s := tx.Status(); s != choices.Processing {
 		tx.vm.ctx.Log.Error("Failed to accept tx %s because the tx is in state %s", tx.txID, s)
 		return fmt.Errorf("transaction has invalid status: %s", s)
@@ -134,11 +162,22 @@ func (tx *UniqueTx) Accept() error {
 	for _, utxo := range tx.UTXOs() {
 		if err := tx.vm.state.FundUTXO(utxo); err != nil {
 			tx.vm.ctx.Log.Error("Failed to fund utxo %s due to %s", utxo.InputID(), err)
-			return err
+			return fmt.Errorf("couldn't fund UTXO: %w", err)
+		}
+		if out, ok := utxo.Out.(ManagedAssetStatus); ok {
+			if err := tx.vm.state.PutManagedAssetStatus(utxo.AssetID(), epoch, out); err != nil {
+				return fmt.Errorf("couldn't update asset status: %w", err)
+			}
 		}
 	}
 
 	if err := tx.setStatus(choices.Accepted); err != nil {
+		tx.vm.ctx.Log.Error("Failed to accept tx %s due to %s", tx.txID, err)
+		return err
+	}
+
+	tx.epoch = epoch
+	if err := tx.vm.state.SetEpoch(tx.ID(), epoch); err != nil {
 		tx.vm.ctx.Log.Error("Failed to accept tx %s due to %s", tx.txID, err)
 		return err
 	}
@@ -160,33 +199,21 @@ func (tx *UniqueTx) Accept() error {
 	tx.vm.pubsub.Publish("accepted", txID)
 	tx.vm.walletService.decided(txID)
 
-	tx.deps = nil // Needed to prevent a memory leak
+	// Needed to prevent a memory leak
+	// No need to mark [setDeps] as false since
+	// there are no remaining dependencies after
+	// the transaction has been accepted.
+	tx.deps = nil
+	tx.setDeps = false
 
 	return nil
 }
 
-// Reject is called when the transaction was finalized as rejected by consensus
-func (tx *UniqueTx) Reject() error {
-	defer tx.vm.db.Abort()
-
-	if err := tx.setStatus(choices.Rejected); err != nil {
-		tx.vm.ctx.Log.Error("Failed to reject tx %s due to %s", tx.txID, err)
-		return err
-	}
-
-	txID := tx.ID()
-	tx.vm.ctx.Log.Debug("Rejecting Tx: %s", txID)
-
-	if err := tx.vm.db.Commit(); err != nil {
-		tx.vm.ctx.Log.Error("Failed to commit reject %s due to %s", tx.txID, err)
-		return err
-	}
-
-	tx.vm.pubsub.Publish("rejected", txID)
-	tx.vm.walletService.decided(txID)
-
+// Reject is called when the transaction was rejected by consensus in the
+// provided epoch
+func (tx *UniqueTx) Reject(uint32) error {
 	tx.deps = nil // Needed to prevent a memory leak
-
+	tx.setDeps = false
 	return nil
 }
 
@@ -196,10 +223,32 @@ func (tx *UniqueTx) Status() choices.Status {
 	return tx.status
 }
 
-// Dependencies returns the set of transactions this transaction builds on
-func (tx *UniqueTx) Dependencies() []snowstorm.Tx {
+// Epoch returns the epoch of this transaction
+func (tx *UniqueTx) Epoch() uint32 {
 	tx.refresh()
-	if tx.Tx == nil || len(tx.deps) != 0 {
+	return tx.epoch
+}
+
+// Dependencies returns the set of transactions this transaction builds on
+func (tx *UniqueTx) Dependencies() []ids.ID {
+	tx.refresh()
+
+	if tx.Tx == nil {
+		return nil
+	}
+
+	if tx.setDeps {
+		if len(tx.deps) == 0 {
+			return nil
+		}
+		deps := tx.deps
+		tx.deps = make([]ids.ID, 0, len(deps))
+		for _, depID := range deps {
+			dependentTx := newUniqueTx(tx.vm, depID, nil)
+			if status := dependentTx.Status(); status != choices.Accepted {
+				tx.deps = append(tx.deps, depID)
+			}
+		}
 		return tx.deps
 	}
 
@@ -212,23 +261,13 @@ func (tx *UniqueTx) Dependencies() []snowstorm.Tx {
 		if txIDs.Contains(txID) {
 			continue
 		}
-		txIDs.Add(txID)
-		tx.deps = append(tx.deps, &UniqueTx{
-			vm:   tx.vm,
-			txID: txID,
-		})
-	}
-	consumedIDs := tx.Tx.ConsumedAssetIDs()
-	for assetID := range tx.Tx.AssetIDs() {
-		if consumedIDs.Contains(assetID) || txIDs.Contains(assetID) {
-			continue
+		dependentTx := newUniqueTx(tx.vm, txID, nil)
+		if status := dependentTx.Status(); status != choices.Accepted {
+			txIDs.Add(txID)
+			tx.deps = append(tx.deps, txID)
 		}
-		txIDs.Add(assetID)
-		tx.deps = append(tx.deps, &UniqueTx{
-			vm:   tx.vm,
-			txID: assetID,
-		})
 	}
+	tx.setDeps = true
 	return tx.deps
 }
 
@@ -273,63 +312,69 @@ func (tx *UniqueTx) Bytes() []byte {
 	return tx.Tx.Bytes()
 }
 
-func (tx *UniqueTx) verifyWithoutCacheWrites() error {
+func (tx *UniqueTx) verifyWithoutCacheWrites(epoch uint32) error {
 	switch status := tx.Status(); status {
 	case choices.Unknown:
 		return errUnknownTx
 	case choices.Accepted:
+		if epoch != tx.Epoch() {
+			return errRejectedTx
+		}
 		return nil
 	case choices.Rejected:
 		return errRejectedTx
 	default:
-		return tx.SemanticVerify()
+		return tx.SemanticVerify(epoch)
 	}
 }
 
 // Verify the validity of this transaction
-func (tx *UniqueTx) Verify() error {
-	if err := tx.verifyWithoutCacheWrites(); err != nil {
+func (tx *UniqueTx) Verify(epoch uint32) error {
+	if err := tx.verifyWithoutCacheWrites(epoch); err != nil {
 		return err
 	}
 
-	tx.verifiedState = true
+	tx.semanticVerification[epoch] = nil
 	tx.vm.pubsub.Publish("verified", tx.ID())
 	return nil
 }
 
 // SyntacticVerify verifies that this transaction is well formed
-func (tx *UniqueTx) SyntacticVerify() error {
-	tx.refresh()
-
+func (tx *UniqueTx) SyntacticVerify(epoch uint32) error {
 	if tx.Tx == nil {
 		return errUnknownTx
 	}
 
-	if tx.verifiedTx {
-		return tx.validity
+	verified, exists := tx.syntacticVerfication[epoch]
+	if exists {
+		return verified
 	}
 
-	tx.verifiedTx = true
-	tx.validity = tx.Tx.SyntacticVerify(
+	validity := tx.Tx.SyntacticVerify(
 		tx.vm.ctx,
 		tx.vm.codec,
 		tx.vm.ctx.AVAXAssetID,
 		tx.vm.txFee,
 		tx.vm.creationTxFee,
 		len(tx.vm.fxs),
+		epoch,
 	)
-	return tx.validity
+	tx.syntacticVerfication[epoch] = validity
+	return validity
 }
 
 // SemanticVerify the validity of this transaction
-func (tx *UniqueTx) SemanticVerify() error {
-	// SyntacticVerify sets the error on validity and is checked in the next
-	// statement
-	_ = tx.SyntacticVerify()
+func (tx *UniqueTx) SemanticVerify(epoch uint32) error {
+	validity := tx.SyntacticVerify(epoch)
 
-	if tx.validity != nil || tx.verifiedState {
-		return tx.validity
+	if validity != nil {
+		return validity
 	}
 
-	return tx.Tx.SemanticVerify(tx.vm, tx.UnsignedTx)
+	validity, exists := tx.semanticVerification[epoch]
+	if exists {
+		return validity
+	}
+
+	return tx.Tx.SemanticVerify(tx.vm, tx.UnsignedTx, epoch)
 }

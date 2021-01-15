@@ -15,7 +15,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/utils/math"
 )
@@ -28,6 +28,8 @@ const (
 var (
 	errUnknownVertex = errors.New("unknown vertex")
 	errWrongChainID  = errors.New("wrong ChainID in vertex")
+
+	_ vertex.Manager = &Serializer{}
 )
 
 // Serializer manages the state of multiple vertices
@@ -62,11 +64,39 @@ func (s *Serializer) Parse(b []byte) (avalanche.Vertex, error) {
 	return newUniqueVertex(s, b)
 }
 
+// Wrap implements the avalanche.State interface
+func (s *Serializer) Wrap(
+	epoch uint32,
+	tr conflicts.Transition,
+	restrictions []ids.ID,
+) (conflicts.Tx, error) {
+	slTx, err := vertex.Wrap(epoch, tr.Bytes(), restrictions)
+	return &tx{
+		serializer: s,
+		tx:         slTx,
+		tr:         tr,
+	}, err
+}
+
+// ParseTx implements the avalanche.State interface
+func (s *Serializer) ParseTx(b []byte) (conflicts.Tx, error) {
+	slTx, err := vertex.ParseTx(b)
+	if err != nil {
+		return nil, err
+	}
+	tr, err := s.vm.Parse(slTx.Transition())
+	return &tx{
+		serializer: s,
+		tx:         slTx,
+		tr:         tr,
+	}, err
+}
+
 // Build implements the avalanche.State interface
 func (s *Serializer) Build(
 	epoch uint32,
 	parentIDs []ids.ID,
-	txs []snowstorm.Tx,
+	transitions []conflicts.Transition,
 	restrictions []ids.ID,
 ) (avalanche.Vertex, error) {
 	height := uint64(0)
@@ -78,9 +108,9 @@ func (s *Serializer) Build(
 		height = math.Max64(height, parent.v.vtx.Height())
 	}
 
-	txBytes := make([][]byte, len(txs))
-	for i, tx := range txs {
-		txBytes[i] = tx.Bytes()
+	transitionBytes := make([][]byte, len(transitions))
+	for i, transition := range transitions {
+		transitionBytes[i] = transition.Bytes()
 	}
 
 	vtx, err := vertex.Build(
@@ -88,7 +118,7 @@ func (s *Serializer) Build(
 		height,
 		epoch,
 		parentIDs,
-		txBytes,
+		transitionBytes,
 		restrictions,
 	)
 	if err != nil {

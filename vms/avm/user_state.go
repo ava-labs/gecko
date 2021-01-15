@@ -18,7 +18,7 @@ type userState struct{ vm *VM }
 
 // SetAddresses ...
 func (s *userState) SetAddresses(db database.Database, addrs []ids.ShortID) error {
-	bytes, err := s.vm.codec.Marshal(codecVersion, addrs)
+	bytes, err := s.vm.codec.Marshal(s.vm.currentCodecVersion, addrs)
 	if err != nil {
 		return err
 	}

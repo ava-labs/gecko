@@ -13,6 +13,7 @@ import (
 	"github.com/ava-labs/avalanchego/utils/units"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPrefixedSetsAndGets(t *testing.T) {
@@ -177,4 +178,82 @@ func TestPrefixedFundingAddresses(t *testing.T) {
 	if len(funds) != 0 {
 		t.Fatalf("Should have returned 0 utxoIDs")
 	}
+}
+
+func TestPrefixedStateManagedAssetStatus(t *testing.T) {
+	// Setup
+	_, _, vm, _ := GenesisVM(t)
+	ctx := vm.ctx
+	defer func() {
+		if err := vm.Shutdown(); err != nil {
+			t.Fatal(err)
+		}
+		ctx.Lock.Unlock()
+	}()
+	state := vm.state
+
+	// Ensure non-existent asset has no status
+	_, _, _, err := state.ManagedAssetStatus(ids.GenerateTestID())
+	require.Error(t, err)
+
+	// Put a status
+	testAssetID := ids.GenerateTestID()
+	testEpoch := uint32(1)
+	testStatus := &secp256k1fx.ManagedAssetStatusOutput{
+		IsFrozen: true,
+		Mgr: secp256k1fx.OutputOwners{
+			Threshold: 1,
+			Locktime:  2,
+			Addrs:     []ids.ShortID{ids.GenerateTestShortID()},
+		},
+	}
+	err = state.PutManagedAssetStatus(testAssetID, testEpoch, testStatus)
+	require.NoError(t, err)
+
+	// Get the status
+	epoch, status, oldStatus, err := state.ManagedAssetStatus(testAssetID)
+	require.NoError(t, err)
+	require.Equal(t, testEpoch, epoch)
+	require.Equal(t, testStatus, status)
+	require.Equal(t, testStatus, oldStatus)
+
+	// Put a new status
+	testEpoch2 := uint32(2)
+	testStatus2 := &secp256k1fx.ManagedAssetStatusOutput{
+		IsFrozen: true,
+		Mgr: secp256k1fx.OutputOwners{
+			Threshold: 2,
+			Locktime:  3,
+			Addrs:     []ids.ShortID{ids.GenerateTestShortID(), ids.GenerateTestShortID()},
+		},
+	}
+	err = state.PutManagedAssetStatus(testAssetID, testEpoch2, testStatus2)
+	require.NoError(t, err)
+
+	// Get the statuses
+	epoch, status, oldStatus, err = state.ManagedAssetStatus(testAssetID)
+	require.NoError(t, err)
+	require.Equal(t, testEpoch2, epoch)
+	require.Equal(t, testStatus2, status)
+	require.Equal(t, testStatus, oldStatus)
+
+	// Put a new status
+	testEpoch3 := uint32(3)
+	testStatus3 := &secp256k1fx.ManagedAssetStatusOutput{
+		IsFrozen: true,
+		Mgr: secp256k1fx.OutputOwners{
+			Threshold: 3,
+			Locktime:  4,
+			Addrs:     []ids.ShortID{ids.GenerateTestShortID(), ids.GenerateTestShortID(), ids.GenerateTestShortID()},
+		},
+	}
+	err = state.PutManagedAssetStatus(testAssetID, testEpoch3, testStatus3)
+	require.NoError(t, err)
+
+	// Get the statuses
+	epoch, status, oldStatus, err = state.ManagedAssetStatus(testAssetID)
+	require.NoError(t, err)
+	require.Equal(t, testEpoch3, epoch)
+	require.Equal(t, testStatus3, status)
+	require.Equal(t, testStatus2, oldStatus)
 }

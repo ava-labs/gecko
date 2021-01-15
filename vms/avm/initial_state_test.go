@@ -20,13 +20,13 @@ import (
 func TestInitialStateVerifyNil(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 	numFxs := 1
 
 	is := (*InitialState)(nil)
-	if err := is.Verify(m, numFxs); err == nil {
+	if err := is.Verify(m, apricotCodecVersion, numFxs); err == nil {
 		t.Fatalf("Should have errored due to nil initial state")
 	}
 }
@@ -34,7 +34,7 @@ func TestInitialStateVerifyNil(t *testing.T) {
 func TestInitialStateVerifyUnknownFxID(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 	numFxs := 1
@@ -42,7 +42,7 @@ func TestInitialStateVerifyUnknownFxID(t *testing.T) {
 	is := InitialState{
 		FxID: 1,
 	}
-	if err := is.Verify(m, numFxs); err == nil {
+	if err := is.Verify(m, apricotCodecVersion, numFxs); err == nil {
 		t.Fatalf("Should have errored due to unknown FxID")
 	}
 }
@@ -50,7 +50,7 @@ func TestInitialStateVerifyUnknownFxID(t *testing.T) {
 func TestInitialStateVerifyNilOutput(t *testing.T) {
 	c := linearcodec.NewDefault()
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 	numFxs := 1
@@ -59,7 +59,7 @@ func TestInitialStateVerifyNilOutput(t *testing.T) {
 		FxID: 0,
 		Outs: []verify.State{nil},
 	}
-	if err := is.Verify(m, numFxs); err == nil {
+	if err := is.Verify(m, apricotCodecVersion, numFxs); err == nil {
 		t.Fatalf("Should have errored due to a nil output")
 	}
 }
@@ -70,7 +70,7 @@ func TestInitialStateVerifyInvalidOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 	numFxs := 1
@@ -79,7 +79,7 @@ func TestInitialStateVerifyInvalidOutput(t *testing.T) {
 		FxID: 0,
 		Outs: []verify.State{&avax.TestVerifiable{Err: errors.New("")}},
 	}
-	if err := is.Verify(m, numFxs); err == nil {
+	if err := is.Verify(m, apricotCodecVersion, numFxs); err == nil {
 		t.Fatalf("Should have errored due to an invalid output")
 	}
 }
@@ -90,7 +90,7 @@ func TestInitialStateVerifyUnsortedOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 	numFxs := 1
@@ -102,13 +102,13 @@ func TestInitialStateVerifyUnsortedOutputs(t *testing.T) {
 			&avax.TestTransferable{Val: 0},
 		},
 	}
-	if err := is.Verify(m, numFxs); err == nil {
+	if err := is.Verify(m, apricotCodecVersion, numFxs); err == nil {
 		t.Fatalf("Should have errored due to unsorted outputs")
 	}
 
-	is.Sort(m)
+	is.Sort(m, apricotCodecVersion)
 
-	if err := is.Verify(m, numFxs); err != nil {
+	if err := is.Verify(m, apricotCodecVersion, numFxs); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -119,13 +119,13 @@ func TestInitialStateVerifySerialization(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := codec.NewDefaultManager()
-	if err := m.RegisterCodec(codecVersion, c); err != nil {
+	if err := m.RegisterCodec(apricotCodecVersion, c); err != nil {
 		t.Fatal(err)
 	}
 
 	expected := []byte{
 		// Codec version:
-		0x00, 0x00,
+		0x00, 0x01,
 		// fxID:
 		0x00, 0x00, 0x00, 0x00,
 		// num outputs:
@@ -167,7 +167,7 @@ func TestInitialStateVerifySerialization(t *testing.T) {
 		},
 	}
 
-	isBytes, err := m.Marshal(codecVersion, is)
+	isBytes, err := m.Marshal(apricotCodecVersion, is)
 	if err != nil {
 		t.Fatal(err)
 	}

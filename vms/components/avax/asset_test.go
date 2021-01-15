@@ -28,7 +28,7 @@ func TestAssetVerifyEmpty(t *testing.T) {
 func TestAssetID(t *testing.T) {
 	c := linearcodec.NewDefault()
 	manager := codec.NewDefaultManager()
-	if err := manager.RegisterCodec(codecVersion, c); err != nil {
+	if err := manager.RegisterCodec(1, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,7 +45,7 @@ func TestAssetID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bytes, err := manager.Marshal(codecVersion, &id)
+	bytes, err := manager.Marshal(1, &id)
 	if err != nil {
 		t.Fatal(err)
 	}

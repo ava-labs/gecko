@@ -27,10 +27,12 @@ type BaseTx struct {
 func (t *BaseTx) SyntacticVerify(
 	ctx *snow.Context,
 	c codec.Manager,
+	codecVersion uint16,
 	txFeeAssetID ids.ID,
 	txFee uint64,
 	_ uint64,
 	_ int,
+	_ uint32,
 ) error {
 	if t == nil {
 		return errNilTx
@@ -45,14 +47,15 @@ func (t *BaseTx) SyntacticVerify(
 		[][]*avax.TransferableInput{t.Ins},
 		[][]*avax.TransferableOutput{t.Outs},
 		c,
+		codecVersion,
 	)
 }
 
 // SemanticVerify that this transaction is valid to be spent.
-func (t *BaseTx) SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiable) error {
+func (t *BaseTx) SemanticVerify(vm *VM, tx UnsignedTx, creds []verify.Verifiable, epoch uint32) error {
 	for i, in := range t.Ins {
 		cred := creds[i]
-		if err := vm.verifyTransfer(tx, in, cred); err != nil {
+		if err := vm.verifyTransfer(tx, epoch, in, cred); err != nil {
 			return err
 		}
 	}

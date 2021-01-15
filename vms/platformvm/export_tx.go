@@ -74,7 +74,7 @@ func (tx *UnsignedExportTx) Verify(
 			return errWrongLocktime
 		}
 	}
-	if !avax.IsSortedTransferableOutputs(tx.ExportedOutputs, Codec) {
+	if !avax.IsSortedTransferableOutputs(tx.ExportedOutputs, c, codecVersion) {
 		return errOutputsNotSorted
 	}
 

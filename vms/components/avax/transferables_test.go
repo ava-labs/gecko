@@ -48,7 +48,7 @@ func TestTransferableOutputSorting(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := codec.NewDefaultManager()
-	if err := manager.RegisterCodec(codecVersion, c); err != nil {
+	if err := manager.RegisterCodec(1, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,11 +76,11 @@ func TestTransferableOutputSorting(t *testing.T) {
 		},
 	}
 
-	if IsSortedTransferableOutputs(outs, manager) {
+	if IsSortedTransferableOutputs(outs, manager, 1) {
 		t.Fatalf("Shouldn't be sorted")
 	}
-	SortTransferableOutputs(outs, manager)
-	if !IsSortedTransferableOutputs(outs, manager) {
+	SortTransferableOutputs(outs, manager, 1)
+	if !IsSortedTransferableOutputs(outs, manager, 1) {
 		t.Fatalf("Should be sorted")
 	}
 	if result := outs[0].Out.(*TestTransferable).Val; result != 0 {
@@ -106,13 +106,13 @@ func TestTransferableOutputSerialization(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := codec.NewDefaultManager()
-	if err := manager.RegisterCodec(codecVersion, c); err != nil {
+	if err := manager.RegisterCodec(1, c); err != nil {
 		t.Fatal(err)
 	}
 
 	expected := []byte{
 		// Codec version
-		0x00, 0x00,
+		0x00, 0x01,
 		// assetID:
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -160,7 +160,7 @@ func TestTransferableOutputSerialization(t *testing.T) {
 		},
 	}
 
-	outBytes, err := manager.Marshal(codecVersion, out)
+	outBytes, err := manager.Marshal(1, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,13 +273,13 @@ func TestTransferableInputSerialization(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := codec.NewDefaultManager()
-	if err := manager.RegisterCodec(codecVersion, c); err != nil {
+	if err := manager.RegisterCodec(1, c); err != nil {
 		t.Fatal(err)
 	}
 
 	expected := []byte{
 		// Codec version
-		0x00, 0x00,
+		0x00, 0x01,
 		// txID:
 		0xf1, 0xe1, 0xd1, 0xc1, 0xb1, 0xa1, 0x91, 0x81,
 		0x71, 0x61, 0x51, 0x41, 0x31, 0x21, 0x11, 0x01,
@@ -324,7 +324,7 @@ func TestTransferableInputSerialization(t *testing.T) {
 		},
 	}
 
-	inBytes, err := manager.Marshal(codecVersion, in)
+	inBytes, err := manager.Marshal(1, in)
 	if err != nil {
 		t.Fatal(err)
 	}

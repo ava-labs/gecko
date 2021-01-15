@@ -55,7 +55,7 @@ var (
 	errNetworkClosed = errors.New("network closed")
 	errPeerIsMyself  = errors.New("peer is myself")
 
-	minimumUnmaskedVersion = version.NewDefaultVersion(constants.PlatformName, 1, 1, 0)
+	minimumUnmaskedVersion = version.NewDefaultVersion(constants.PlatformName, 1, 2, 0)
 )
 
 func init() { rand.Seed(time.Now().UnixNano()) }
@@ -137,7 +137,7 @@ type network struct {
 	connMeter                          ConnMeter
 	executor                           timer.Executor
 	b                                  Builder
-	apricotPhase0Time                  time.Time
+	maskTime                           time.Time
 
 	// stateLock should never be held when grabbing a peer lock
 	stateLock       sync.RWMutex
@@ -287,7 +287,7 @@ func NewNetwork(
 	restartOnDisconnected bool,
 	disconnectedCheckFreq time.Duration,
 	disconnectedRestartTimeout time.Duration,
-	apricotPhase0Time time.Time,
+	maskTime time.Time,
 ) Network {
 	// #nosec G404
 	netw := &network{
@@ -337,7 +337,7 @@ func NewNetwork(
 		disconnectedCheckFreq:              disconnectedCheckFreq,
 		connectedMeter:                     timer.TimedMeter{Duration: disconnectedRestartTimeout},
 		restarter:                          restarter,
-		apricotPhase0Time:                  apricotPhase0Time,
+		maskTime:                           maskTime,
 	}
 
 	if err := netw.initialize(registerer); err != nil {
@@ -676,7 +676,7 @@ func (n *network) GetHeartbeat() int64 { return atomic.LoadInt64(&n.lastHeartbea
 func (n *network) Dispatch() error {
 	go n.gossip() // Periodically gossip peers
 	go func() {
-		duration := time.Until(n.apricotPhase0Time)
+		duration := time.Until(n.maskTime)
 		time.Sleep(duration)
 
 		n.stateLock.Lock()
@@ -895,7 +895,7 @@ func (n *network) gossip() {
 				!ip.IsZero() &&
 				n.vdrs.Contains(peer.id) {
 				peerVersion := peer.versionStruct.GetValue().(version.Version)
-				if !peerVersion.Before(minimumUnmaskedVersion) || time.Since(n.apricotPhase0Time) < 0 {
+				if !peerVersion.Before(minimumUnmaskedVersion) || time.Since(n.maskTime) < 0 {
 					ips = append(ips, ip)
 				}
 			}
@@ -1142,7 +1142,7 @@ func (n *network) validatorIPs() []utils.IPDesc {
 		ip := peer.getIP()
 		if peer.connected.GetValue() && !ip.IsZero() && n.vdrs.Contains(peer.id) {
 			peerVersion := peer.versionStruct.GetValue().(version.Version)
-			if !peerVersion.Before(minimumUnmaskedVersion) || time.Since(n.apricotPhase0Time) < 0 {
+			if !peerVersion.Before(minimumUnmaskedVersion) || time.Since(n.maskTime) < 0 {
 				ips = append(ips, ip)
 			}
 		}

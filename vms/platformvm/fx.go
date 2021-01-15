@@ -13,19 +13,18 @@ type Fx interface {
 	// Notify this Fx that the VM is bootstrapped
 	Bootstrapped() error
 
-	// VerifyTransfer verifies that the specified transaction can spend the
-	// provided utxo with no restrictions on the destination. If the transaction
-	// can't spend the output based on the input and credential, a non-nil error
-	// should be returned.
-	VerifyTransfer(tx, in, cred, utxo interface{}) error
+	// VerifyTransfer returns nil iff the given input and output are well-formed
+	// and syntactically valid. Does not check signatures. That should
+	// be done by calling VerifyPermission.
+	VerifyTransfer(in, out interface{}) error
 
-	// VerifyPermission returns nil iff [cred] proves that [controlGroup]
+	// VerifyPermission returns nil iff [cred] proves that [owner]
 	// assents to [tx]
-	VerifyPermission(tx, in, cred, controlGroup interface{}) error
+	VerifyPermission(tx, in, cred, owner interface{}) error
 
-	// CreateOutput creates a new output with the provided control group worth
+	// CreateOutput creates a new output with the provided owner worth
 	// the specified amount
-	CreateOutput(amount uint64, controlGroup interface{}) (interface{}, error)
+	CreateOutput(amount uint64, owner interface{}) (interface{}, error)
 }
 
 // Owned ...

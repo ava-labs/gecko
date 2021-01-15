@@ -6,13 +6,14 @@ package avalanche
 import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 // issuer issues [vtx] into consensus after its dependencies are met.
 type issuer struct {
 	t                 *Transitive
 	vtx               avalanche.Vertex
+	updatedEpoch      bool
 	issued, abandoned bool
 	vtxDeps, txDeps   ids.Set
 }
@@ -56,22 +57,71 @@ func (i *issuer) Update() {
 		i.t.errs.Add(err)
 		return
 	}
-	validTxs := make([]snowstorm.Tx, 0, len(txs))
+	validTransitions := make([]conflicts.Transition, 0, len(txs))
+	invalidTransitions := []ids.ID(nil)
+	if i.updatedEpoch {
+		invalidTransitions = make([]ids.ID, 0, len(txs))
+	}
+	unissuedTransitions := make([]conflicts.Transition, 0, len(txs))
 	for _, tx := range txs {
+		transition := tx.Transition()
 		if err := tx.Verify(); err != nil {
 			i.t.Ctx.Log.Debug("Transaction %s failed verification due to %s", tx.ID(), err)
-		} else {
-			validTxs = append(validTxs, tx)
+			if i.updatedEpoch {
+				invalidTransitions = append(invalidTransitions, transition.ID())
+			}
+			continue
 		}
+
+		validTransitions = append(validTransitions, transition)
+		if !i.t.Consensus.TransitionProcessing(transition.ID()) {
+			unissuedTransitions = append(unissuedTransitions, transition)
+		}
+	}
+
+	epoch, err := i.vtx.Epoch()
+	if err != nil {
+		i.t.errs.Add(err)
+		return
 	}
 
 	// Some of the transactions weren't valid. Abandon this vertex.
 	// Take the valid transactions and issue a new vertex with them.
-	if len(validTxs) != len(txs) {
+	if len(validTransitions) != len(txs) {
 		i.t.Ctx.Log.Debug("Abandoning %s due to failed transaction verification", vtxID)
-		if err := i.t.batch(validTxs, false /*=force*/, false /*=empty*/); err != nil {
+		err = i.t.batch(
+			epoch,
+			validTransitions,
+			[][]ids.ID{invalidTransitions},
+			false, // force
+			false, // empty
+			true,  // updatedEpoch
+		)
+		i.t.errs.Add(err)
+		i.t.vtxBlocked.Abandon(vtxID)
+		return
+	}
+
+	currentEpoch := i.t.Ctx.Epoch()
+	// Make sure that the first time these transitions are issued, they are
+	// being issued into the current epoch. This enforces that nodes will prefer
+	// their current epoch
+	if epoch != currentEpoch && len(unissuedTransitions) > 0 {
+		i.t.Ctx.Log.Debug("Reissuing transitions from epoch %d into epoch %d", epoch, currentEpoch)
+		if err := i.t.batch(
+			currentEpoch,
+			unissuedTransitions,
+			nil,   // restrictions
+			true,  // force
+			false, // empty
+			true,  // updatedEpoch
+		); err != nil {
 			i.t.errs.Add(err)
+			return
 		}
+	}
+	if epoch > currentEpoch {
+		i.t.Ctx.Log.Debug("Dropping vertex from future epoch:\n%s", vtxID)
 		i.t.vtxBlocked.Abandon(vtxID)
 		return
 	}
@@ -106,7 +156,7 @@ func (i *issuer) Update() {
 	// Notify vertices waiting on this one that it (and its transactions) have been issued.
 	i.t.vtxBlocked.Fulfill(vtxID)
 	for _, tx := range txs {
-		i.t.txBlocked.Fulfill(tx.ID())
+		i.t.txBlocked.Fulfill(tx.Transition().ID())
 	}
 
 	// Issue a repoll

@@ -8,8 +8,8 @@ AVALANCHE_IMAGE="$AVALANCHE_IMAGE_REPO:$AVALANCHE_IMAGE_TAG"
 echo "Using Avalanche Image: $AVALANCHE_IMAGE"
 
 DOCKER_REPO="avaplatform"
-BYZANTINE_IMAGE="$DOCKER_REPO/avalanche-byzantine:v0.1.5-rc.1"
-TEST_SUITE_IMAGE="$DOCKER_REPO/avalanche-testing:v0.10.4"
+BYZANTINE_IMAGE="$DOCKER_REPO/avalanche-byzantine:apricot"
+TEST_SUITE_IMAGE="$DOCKER_REPO/avalanche-testing:apricot"
 
 # If Docker Credentials are not available skip the Byzantine Tests
 if [[ -z ${DOCKER_USERNAME} ]]; then

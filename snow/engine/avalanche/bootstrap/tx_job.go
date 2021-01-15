@@ -11,7 +11,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common/queue"
 	"github.com/ava-labs/avalanchego/utils/logging"
@@ -20,11 +20,12 @@ import (
 type txParser struct {
 	log                     logging.Logger
 	numAccepted, numDropped prometheus.Counter
+	manager                 vertex.Manager
 	vm                      vertex.DAGVM
 }
 
 func (p *txParser) Parse(txBytes []byte) (queue.Job, error) {
-	tx, err := p.vm.Parse(txBytes)
+	tx, err := p.manager.ParseTx(txBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -33,23 +34,21 @@ func (p *txParser) Parse(txBytes []byte) (queue.Job, error) {
 		numAccepted: p.numAccepted,
 		numDropped:  p.numDropped,
 		tx:          tx,
+		vm:          p.vm,
 	}, nil
 }
 
 type txJob struct {
 	log                     logging.Logger
 	numAccepted, numDropped prometheus.Counter
-	tx                      snowstorm.Tx
+	tx                      conflicts.Tx
+	vm                      vertex.DAGVM
 }
 
-func (t *txJob) ID() ids.ID { return t.tx.ID() }
+func (t *txJob) ID() ids.ID { return t.tx.Transition().ID() }
 func (t *txJob) MissingDependencies() (ids.Set, error) {
 	missing := ids.Set{}
-	for _, dep := range t.tx.Dependencies() {
-		if dep.Status() != choices.Accepted {
-			missing.Add(dep.ID())
-		}
-	}
+	missing.Add(t.tx.Transition().Dependencies()...)
 	return missing, nil
 }
 
@@ -83,4 +82,6 @@ func (t *txJob) Execute() error {
 	}
 	return nil
 }
-func (t *txJob) Bytes() []byte { return t.tx.Bytes() }
+func (t *txJob) Bytes() []byte         { return t.tx.Bytes() }
+func (t *txJob) DispatchID() ids.ID    { return t.tx.Transition().ID() }
+func (t *txJob) DispatchBytes() []byte { return t.tx.Transition().Bytes() }

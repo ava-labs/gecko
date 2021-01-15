@@ -17,6 +17,7 @@ import (
 
 func TestPrefixedFunds(t *testing.T) {
 	c := linearcodec.NewDefault()
+	codecVersion := uint16(1)
 	if err := c.RegisterType(&TestAddressable{}); err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +31,8 @@ func TestPrefixedFunds(t *testing.T) {
 
 	db := memdb.New()
 
-	st0 := NewPrefixedState(db, manager, manager, chain0ID, chain1ID)
-	st1 := NewPrefixedState(db, manager, manager, chain1ID, chain0ID)
+	st0 := NewPrefixedState(db, manager, manager, func() uint16 { return codecVersion }, chain0ID, chain1ID)
+	st1 := NewPrefixedState(db, manager, manager, func() uint16 { return codecVersion }, chain1ID, chain0ID)
 
 	addr := ids.GenerateTestShortID()
 	addrBytes := addr.Bytes()

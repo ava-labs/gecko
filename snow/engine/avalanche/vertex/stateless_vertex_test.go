@@ -14,11 +14,11 @@ func TestVertexVerify(t *testing.T) {
 	for i := range tooManyParents {
 		tooManyParents[i][0] = byte(i)
 	}
-	tooManyTxs := make([][]byte, maxTxsPerVtx+1)
+	tooManyTxs := make([][]byte, maxTransitionsPerVtx+1)
 	for i := range tooManyTxs {
 		tooManyTxs[i] = []byte{byte(i)}
 	}
-	tooManyRestrictions := make([]ids.ID, maxTxsPerVtx+1)
+	tooManyRestrictions := make([]ids.ID, maxTransitionsPerVtx+1)
 	for i := range tooManyRestrictions {
 		tooManyRestrictions[i][0] = byte(i)
 	}
@@ -41,7 +41,7 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: false,
@@ -54,7 +54,7 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        1,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
@@ -67,33 +67,33 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    tooManyParents,
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
 		},
 		{
-			name: "no vertex txs",
+			name: "no vertex transitions",
 			vertex: statelessVertex{innerStatelessVertex: innerStatelessVertex{
 				Version:      0,
 				ChainID:      ids.ID{},
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{},
+				Transitions:  [][]byte{},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
 		},
 		{
-			name: "too many vertex txs",
+			name: "too many vertex transitions",
 			vertex: statelessVertex{innerStatelessVertex: innerStatelessVertex{
 				Version:      0,
 				ChainID:      ids.ID{},
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          tooManyTxs,
+				Transitions:  tooManyTxs,
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
@@ -106,7 +106,7 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: tooManyRestrictions,
 			}},
 			shouldErr: true,
@@ -119,7 +119,7 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{{1}, {0}},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
@@ -132,20 +132,20 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{{1}, {0}},
 			}},
 			shouldErr: true,
 		},
 		{
-			name: "unsorted vertex txs",
+			name: "unsorted vertex transitions",
 			vertex: statelessVertex{innerStatelessVertex: innerStatelessVertex{
 				Version:      0,
 				ChainID:      ids.ID{},
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{0}, {1}}, // note that txs are sorted by their hashes
+				Transitions:  [][]byte{{0}, {1}}, // note that transitions are sorted by their hashes
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
@@ -158,7 +158,7 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{{0}, {0}},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,
@@ -171,20 +171,20 @@ func TestVertexVerify(t *testing.T) {
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{}},
+				Transitions:  [][]byte{{}},
 				Restrictions: []ids.ID{{0}, {0}},
 			}},
 			shouldErr: true,
 		},
 		{
-			name: "duplicate vertex txs",
+			name: "duplicate vertex transitions",
 			vertex: statelessVertex{innerStatelessVertex: innerStatelessVertex{
 				Version:      0,
 				ChainID:      ids.ID{},
 				Height:       0,
 				Epoch:        0,
 				ParentIDs:    []ids.ID{},
-				Txs:          [][]byte{{0}, {0}}, // note that txs are sorted by their hashes
+				Transitions:  [][]byte{{0}, {0}},
 				Restrictions: []ids.ID{},
 			}},
 			shouldErr: true,

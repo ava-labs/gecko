@@ -22,7 +22,6 @@ var (
 	errWrongVMType                    = errors.New("wrong vm type")
 	errWrongTxType                    = errors.New("wrong tx type")
 	errWrongOpType                    = errors.New("wrong operation type")
-	errWrongUTXOType                  = errors.New("wrong utxo type")
 	errWrongInputType                 = errors.New("wrong input type")
 	errWrongCredentialType            = errors.New("wrong credential type")
 	errWrongOwnerType                 = errors.New("wrong owner type")
@@ -62,6 +61,8 @@ func (fx *Fx) Initialize(vmIntf interface{}) error {
 		c.RegisterType(&TransferOutput{}),
 		c.RegisterType(&MintOperation{}),
 		c.RegisterType(&Credential{}),
+		c.RegisterType(&ManagedAssetStatusOutput{}),
+		c.RegisterType(&UpdateManagedAssetOperation{}),
 	)
 	return errs.Err
 }
@@ -82,24 +83,40 @@ func (fx *Fx) Bootstrapping() error { return nil }
 // Bootstrapped ...
 func (fx *Fx) Bootstrapped() error { fx.bootstrapped = true; return nil }
 
-// VerifyPermission returns nil iff [credIntf] proves that [controlGroup] assents to [txIntf]
+// VerifyPermission returns nil iff [credIntf] proves that [ownerIntf] assents to [txIntf]
+// [inIntf] must be an *Input or *TransferInput
+// [ownerIntf] must be an *OutputOwners or *TransferOutput
 func (fx *Fx) VerifyPermission(txIntf, inIntf, credIntf, ownerIntf interface{}) error {
 	tx, ok := txIntf.(Tx)
 	if !ok {
 		return errWrongTxType
 	}
-	in, ok := inIntf.(*Input)
-	if !ok {
-		return errWrongInputType
+
+	var in *Input
+	switch input := inIntf.(type) {
+	case *Input:
+		in = input
+	case *TransferInput:
+		in = &input.Input
+	default:
+		return fmt.Errorf("expected input to be *Input or *TransferInput but is %T", input)
 	}
+
 	cred, ok := credIntf.(*Credential)
 	if !ok {
 		return errWrongCredentialType
 	}
-	owner, ok := ownerIntf.(*OutputOwners)
-	if !ok {
-		return errWrongOwnerType
+
+	var owner *OutputOwners
+	switch o := ownerIntf.(type) {
+	case *OutputOwners:
+		owner = o
+	case *TransferOutput:
+		owner = &o.OutputOwners
+	default:
+		return fmt.Errorf("expected owner to be *OutputOwners or *TransferOutput but got %T", o)
 	}
+
 	if err := verify.All(in, cred, owner); err != nil {
 		return err
 	}
@@ -107,69 +124,78 @@ func (fx *Fx) VerifyPermission(txIntf, inIntf, credIntf, ownerIntf interface{}) 
 }
 
 // VerifyOperation ...
-func (fx *Fx) VerifyOperation(txIntf, opIntf, credIntf interface{}, utxosIntf []interface{}) error {
+func (fx *Fx) VerifyOperation(txIntf, opIntf, credIntf interface{}, outsIntf []interface{}) error {
+	if len(outsIntf) != 1 {
+		return errWrongNumberOfUTXOs
+	}
+
 	tx, ok := txIntf.(Tx)
 	if !ok {
 		return errWrongTxType
 	}
-	op, ok := opIntf.(*MintOperation)
-	if !ok {
-		return errWrongOpType
-	}
+
 	cred, ok := credIntf.(*Credential)
 	if !ok {
 		return errWrongCredentialType
 	}
-	if len(utxosIntf) != 1 {
-		return errWrongNumberOfUTXOs
+
+	switch op := opIntf.(type) {
+	case *MintOperation:
+		out, ok := outsIntf[0].(*MintOutput)
+		if !ok {
+			return fmt.Errorf("expected output to be *MintOutput but got %T", outsIntf[0])
+		}
+		return fx.verifyMintOperation(tx, op, cred, out)
+	case *UpdateManagedAssetOperation:
+		out, ok := outsIntf[0].(*ManagedAssetStatusOutput)
+		if !ok {
+			return fmt.Errorf("expected output to be *ManagedAssetStatusOutput but got %T", outsIntf[0])
+		}
+		return fx.verifyUpdateManagedAssetOperation(tx, op, cred, out)
+	default:
+		return errWrongOpType
 	}
-	out, ok := utxosIntf[0].(*MintOutput)
-	if !ok {
-		return errWrongUTXOType
-	}
-	return fx.verifyOperation(tx, op, cred, out)
 }
 
-func (fx *Fx) verifyOperation(tx Tx, op *MintOperation, cred *Credential, utxo *MintOutput) error {
-	if err := verify.All(op, cred, utxo); err != nil {
+func (fx *Fx) verifyMintOperation(tx Tx, op *MintOperation, cred *Credential, out *MintOutput) error {
+	if err := verify.All(op, cred, out); err != nil {
 		return err
 	}
-	if !utxo.Equals(&op.MintOutput.OutputOwners) {
+	if !out.Equals(&op.MintOutput.OutputOwners) {
 		return errWrongMintCreated
 	}
-	return fx.VerifyCredentials(tx, &op.MintInput, cred, &utxo.OutputOwners)
+	return fx.VerifyCredentials(tx, &op.MintInput, cred, &out.OutputOwners)
+}
+
+func (fx *Fx) verifyUpdateManagedAssetOperation(
+	tx Tx,
+	op *UpdateManagedAssetOperation,
+	cred *Credential,
+	out *ManagedAssetStatusOutput,
+) error {
+	if err := verify.All(op, cred, out); err != nil {
+		return err
+	}
+	return fx.VerifyCredentials(tx, &op.Input, cred, &out.Mgr)
 }
 
 // VerifyTransfer ...
-func (fx *Fx) VerifyTransfer(txIntf, inIntf, credIntf, utxoIntf interface{}) error {
-	tx, ok := txIntf.(Tx)
-	if !ok {
-		return errWrongTxType
-	}
+func (fx *Fx) VerifyTransfer(inIntf, outIntf interface{}) error {
 	in, ok := inIntf.(*TransferInput)
 	if !ok {
 		return errWrongInputType
 	}
-	cred, ok := credIntf.(*Credential)
+	out, ok := outIntf.(*TransferOutput)
 	if !ok {
-		return errWrongCredentialType
+		return fmt.Errorf("expected output to be *TransferOutput but got %T", outIntf)
 	}
-	out, ok := utxoIntf.(*TransferOutput)
-	if !ok {
-		return errWrongUTXOType
-	}
-	return fx.VerifySpend(tx, in, cred, out)
-}
-
-// VerifySpend ensures that the utxo can be sent to any address
-func (fx *Fx) VerifySpend(tx Tx, in *TransferInput, cred *Credential, utxo *TransferOutput) error {
-	if err := verify.All(utxo, in, cred); err != nil {
+	if err := verify.All(in, out); err != nil {
 		return err
-	} else if utxo.Amt != in.Amt {
-		return fmt.Errorf("utxo amount and input amount should be same but are %d and %d", utxo.Amt, in.Amt)
 	}
-
-	return fx.VerifyCredentials(tx, &in.Input, cred, &utxo.OutputOwners)
+	if out.Amt != in.Amt {
+		return fmt.Errorf("output amount (%d) != input amount (%d)", out.Amt, in.Amt)
+	}
+	return nil
 }
 
 // VerifyCredentials ensures that the output can be spent by the input with the

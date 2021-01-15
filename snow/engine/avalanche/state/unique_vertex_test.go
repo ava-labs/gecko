@@ -7,26 +7,11 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ava-labs/avalanchego/database/memdb"
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 )
-
-func newSerializer(t *testing.T, parse func([]byte) (snowstorm.Tx, error)) *Serializer {
-	vm := vertex.TestVM{}
-	vm.T = t
-	vm.Default(true)
-	vm.ParseF = parse
-
-	baseDB := memdb.New()
-	ctx := snow.DefaultContextTest()
-	s := &Serializer{}
-	s.Initialize(ctx, &vm, baseDB)
-	return s
-}
 
 func TestUnknownUniqueVertexErrors(t *testing.T) {
 	s := newSerializer(t, nil)
@@ -58,15 +43,15 @@ func TestUnknownUniqueVertexErrors(t *testing.T) {
 }
 
 func TestUniqueVertexCacheHit(t *testing.T) {
-	testTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	testTransition := &conflicts.TestTransition{
 		IDV: ids.ID{1},
-	}}
+	}
 
-	s := newSerializer(t, func(b []byte) (snowstorm.Tx, error) {
+	s := newSerializer(t, func(b []byte) (conflicts.Transition, error) {
 		if !bytes.Equal(b, []byte{0}) {
 			t.Fatal("unknown tx")
 		}
-		return testTx, nil
+		return testTransition, nil
 	})
 
 	vtxID := ids.ID{2}
@@ -125,8 +110,8 @@ func TestUniqueVertexCacheHit(t *testing.T) {
 	if len(txs) != 1 {
 		t.Fatalf("Incorrect number of transactions")
 	}
-	if txs[0] != testTx {
-		t.Fatalf("Txs retrieved the wrong Tx")
+	if txs[0].(*tx).tr != testTransition {
+		t.Fatalf("Txs retrieved the wrong transition")
 	}
 
 	if newUVtx.v != uVtx.v {
@@ -135,21 +120,19 @@ func TestUniqueVertexCacheHit(t *testing.T) {
 }
 
 func TestUniqueVertexCacheMiss(t *testing.T) {
-	txBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
-	testTx := &snowstorm.TestTx{
-		TestDecidable: choices.TestDecidable{
-			IDV: ids.ID{1},
-		},
-		BytesV: txBytes,
+	transitionBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
+	testTransition := &conflicts.TestTransition{
+		IDV:    ids.ID{1},
+		BytesV: transitionBytes,
 	}
-	parseTx := func(b []byte) (snowstorm.Tx, error) {
-		if !bytes.Equal(txBytes, b) {
+	parseTransition := func(b []byte) (conflicts.Transition, error) {
+		if !bytes.Equal(transitionBytes, b) {
 			t.Fatal("asked to parse unexpected transaction")
 		}
 
-		return testTx, nil
+		return testTransition, nil
 	}
-	s := newSerializer(t, parseTx)
+	s := newSerializer(t, parseTransition)
 	parentID := ids.ID{'p', 'a', 'r', 'e', 'n', 't'}
 	parentIDs := []ids.ID{parentID}
 	chainID := ids.ID{}
@@ -159,7 +142,7 @@ func TestUniqueVertexCacheMiss(t *testing.T) {
 		height,
 		0,
 		parentIDs,
-		[][]byte{txBytes},
+		[][]byte{transitionBytes},
 		nil,
 	)
 	if err != nil {
@@ -226,8 +209,6 @@ func TestUniqueVertexCacheMiss(t *testing.T) {
 			t.Fatalf("Found unexpected parentID: %s, expected: %s", vtxParents[0].ID(), parentID)
 		case len(vtxTxs) != 1:
 			t.Fatalf("Exepcted vertex to have 1 transaction, but found %d", len(vtxTxs))
-		case !bytes.Equal(vtxTxs[0].Bytes(), txBytes):
-			t.Fatalf("Found unexpected transaction bytes")
 		}
 	}
 

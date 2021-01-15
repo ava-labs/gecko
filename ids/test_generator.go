@@ -3,6 +3,10 @@
 
 package ids
 
+import (
+	"encoding/binary"
+)
+
 var (
 	offset = uint64(0)
 )
@@ -10,7 +14,9 @@ var (
 // GenerateTestID returns a new ID that should only be used for testing
 func GenerateTestID() ID {
 	offset++
-	return Empty.Prefix(offset)
+	var b [32]byte
+	binary.PutUvarint(b[:], offset)
+	return ID(b)
 }
 
 // GenerateTestShortID returns a new ID that should only be used for testing

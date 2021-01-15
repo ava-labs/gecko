@@ -10,7 +10,7 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/hashing"
@@ -224,22 +224,49 @@ func (vtx *uniqueVertex) Epoch() (uint32, error) {
 	return vtx.v.vtx.Epoch(), nil
 }
 
-func (vtx *uniqueVertex) Txs() ([]snowstorm.Tx, error) {
+func (vtx *uniqueVertex) Txs() ([]conflicts.Tx, error) {
 	vtx.refresh()
 
 	if vtx.v.vtx == nil {
 		return nil, fmt.Errorf("failed to get txs for vertex with status: %s", vtx.v.status)
 	}
 
-	txs := vtx.v.vtx.Txs()
-	if len(txs) != len(vtx.v.txs) {
-		vtx.v.txs = make([]snowstorm.Tx, len(txs))
-		for i, txBytes := range txs {
-			tx, err := vtx.serializer.vm.Parse(txBytes)
+	epoch := vtx.v.vtx.Epoch()
+	transitions := vtx.v.vtx.Transitions()
+	restrictions := vtx.v.vtx.Restrictions()
+	numTxs := len(transitions)
+	if len(restrictions) > 0 {
+		numTxs++
+	}
+	if numTxs != len(vtx.v.txs) {
+		vtx.v.txs = make([]conflicts.Tx, numTxs)
+		for i, transitionBytes := range transitions {
+			slTx, err := vertex.Wrap(epoch, transitionBytes, nil)
 			if err != nil {
 				return nil, err
 			}
-			vtx.v.txs[i] = tx
+			tr, err := vtx.serializer.vm.Parse(transitionBytes)
+			if err != nil {
+				return nil, err
+			}
+			vtx.v.txs[i] = &tx{
+				serializer: vtx.serializer,
+				tx:         slTx,
+				tr:         tr,
+			}
+		}
+		if len(restrictions) > 0 {
+			slTx, err := vertex.Wrap(epoch, nil, restrictions)
+			if err != nil {
+				return nil, err
+			}
+			slTxID := slTx.ID()
+			uid := hashing.ComputeHash256Array(slTxID[:])
+			vtx.v.txs[len(transitions)] = &tx{
+				serializer: vtx.serializer,
+				tx:         slTx,
+				tr:         emptyTransition{id: uid},
+			}
 		}
 	}
 
@@ -294,5 +321,5 @@ type vertexState struct {
 	status choices.Status
 
 	parents []avalanche.Vertex
-	txs     []snowstorm.Tx
+	txs     []conflicts.Tx
 }

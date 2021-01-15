@@ -69,8 +69,9 @@ func (out *TransferableOutput) Verify() error {
 }
 
 type innerSortTransferableOutputs struct {
-	outs  []*TransferableOutput
-	codec codec.Manager
+	outs         []*TransferableOutput
+	codec        codec.Manager
+	codecVersion uint16
 }
 
 func (outs *innerSortTransferableOutputs) Less(i, j int) bool {
@@ -87,11 +88,11 @@ func (outs *innerSortTransferableOutputs) Less(i, j int) bool {
 		return false
 	}
 
-	iBytes, err := outs.codec.Marshal(codecVersion, &iOut.Out)
+	iBytes, err := outs.codec.Marshal(outs.codecVersion, &iOut.Out)
 	if err != nil {
 		return false
 	}
-	jBytes, err := outs.codec.Marshal(codecVersion, &jOut.Out)
+	jBytes, err := outs.codec.Marshal(outs.codecVersion, &jOut.Out)
 	if err != nil {
 		return false
 	}
@@ -101,13 +102,21 @@ func (outs *innerSortTransferableOutputs) Len() int      { return len(outs.outs)
 func (outs *innerSortTransferableOutputs) Swap(i, j int) { o := outs.outs; o[j], o[i] = o[i], o[j] }
 
 // SortTransferableOutputs sorts output objects
-func SortTransferableOutputs(outs []*TransferableOutput, c codec.Manager) {
-	sort.Sort(&innerSortTransferableOutputs{outs: outs, codec: c})
+func SortTransferableOutputs(outs []*TransferableOutput, c codec.Manager, codecVersion uint16) {
+	sort.Sort(&innerSortTransferableOutputs{
+		outs:         outs,
+		codec:        c,
+		codecVersion: codecVersion,
+	})
 }
 
 // IsSortedTransferableOutputs returns true if output objects are sorted
-func IsSortedTransferableOutputs(outs []*TransferableOutput, c codec.Manager) bool {
-	return sort.IsSorted(&innerSortTransferableOutputs{outs: outs, codec: c})
+func IsSortedTransferableOutputs(outs []*TransferableOutput, c codec.Manager, codecVersion uint16) bool {
+	return sort.IsSorted(&innerSortTransferableOutputs{
+		outs:         outs,
+		codec:        c,
+		codecVersion: codecVersion,
+	})
 }
 
 // TransferableInput ...
@@ -203,6 +212,7 @@ func VerifyTx(
 	allIns [][]*TransferableInput,
 	allOuts [][]*TransferableOutput,
 	c codec.Manager,
+	codecVersion uint16,
 ) error {
 	fc := NewFlowChecker()
 
@@ -216,7 +226,7 @@ func VerifyTx(
 			}
 			fc.Produce(out.AssetID(), out.Output().Amount())
 		}
-		if !IsSortedTransferableOutputs(outs, c) {
+		if !IsSortedTransferableOutputs(outs, c, codecVersion) {
 			return errOutputsNotSorted
 		}
 	}

@@ -6,23 +6,14 @@ package avm
 import (
 	"errors"
 
-	"github.com/ava-labs/avalanchego/cache"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 )
 
 var (
 	errCacheTypeMismatch = errors.New("type returned from cache doesn't match the expected type")
+	freezeAssetPrefix    = []byte("freezeAsset")
 )
-
-func uniqueID(id ids.ID, prefix uint64, cacher cache.Cacher) ids.ID {
-	if cachedIDIntf, found := cacher.Get(id); found {
-		return cachedIDIntf.(ids.ID)
-	}
-	uID := id.Prefix(prefix)
-	cacher.Put(id, uID)
-	return uID
-}
 
 // state is a thin wrapper around a database to provide, caching, serialization,
 // and de-serialization.
@@ -44,10 +35,16 @@ func (s *state) Tx(id ids.ID) (*Tx, error) {
 
 	// The key was in the database
 	tx := &Tx{}
-	if _, err := s.GenesisCodec.Unmarshal(bytes, tx); err != nil {
+	version, err := s.GenesisCodec.Unmarshal(bytes, tx)
+	if err != nil {
 		return nil, err
 	}
-	unsignedBytes, err := s.GenesisCodec.Marshal(codecVersion, &tx.UnsignedTx)
+	tx.Version = version
+
+	// The byte representation of this transaction, and the ID,
+	// which is derived from it, are created by serializing the
+	// transaction using the codec version it was created with
+	unsignedBytes, err := s.GenesisCodec.Marshal(version, &tx.UnsignedTx)
 	if err != nil {
 		return nil, err
 	}

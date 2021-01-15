@@ -17,7 +17,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 	"github.com/ava-labs/avalanchego/snow/engine/common/queue"
@@ -27,6 +27,7 @@ import (
 
 var (
 	errUnknownVertex       = errors.New("unknown vertex")
+	errUnknownTx           = errors.New("unknown tx")
 	errParsedUnknownVertex = errors.New("parsed unknown vertex")
 )
 
@@ -323,43 +324,39 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	txID0 := ids.GenerateTestID()
-	txID1 := ids.GenerateTestID()
+	trID0 := ids.GenerateTestID()
+	trID1 := ids.GenerateTestID()
 
-	txBytes0 := []byte{0}
-	txBytes1 := []byte{1}
+	trBytes0 := []byte{0}
+	trBytes1 := []byte{1}
 
-	tx0 := &snowstorm.TestTx{
-		TestDecidable: choices.TestDecidable{
-			IDV:     txID0,
-			StatusV: choices.Processing,
-		},
-		BytesV: txBytes0,
+	tr0 := &conflicts.TestTransition{
+		IDV:       trID0,
+		StatusV:   choices.Processing,
+		InputIDsV: []ids.ID{utxos[0]},
+		BytesV:    trBytes0,
 	}
-	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	// Depends on tx0
-	tx1 := &snowstorm.TestTx{
-		TestDecidable: choices.TestDecidable{
-			IDV:     txID1,
-			StatusV: choices.Processing,
-		},
-		DependenciesV: []snowstorm.Tx{tx0},
-		BytesV:        txBytes1,
+	// Depends on tr0
+	tr1 := &conflicts.TestTransition{
+		IDV:           trID1,
+		StatusV:       choices.Processing,
+		DependenciesV: []conflicts.Transition{tr0},
+		InputIDsV:     []ids.ID{utxos[1]},
+		BytesV:        trBytes1,
 	}
-	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
 
 	vtxID0 := ids.GenerateTestID()
 	vtxID1 := ids.GenerateTestID()
 
 	vtxBytes0 := []byte{2}
 	vtxBytes1 := []byte{3}
-	vm.ParseF = func(b []byte) (snowstorm.Tx, error) {
+	vm.ParseF = func(b []byte) (conflicts.Transition, error) {
 		switch {
-		case bytes.Equal(b, txBytes0):
-			return tx0, nil
-		case bytes.Equal(b, txBytes1):
-			return tx1, nil
+		case bytes.Equal(b, trBytes0):
+			return tr0, nil
+		case bytes.Equal(b, trBytes1):
+			return tr1, nil
 		default:
 			return nil, errors.New("wrong tx")
 		}
@@ -371,7 +368,7 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 			StatusV: choices.Unknown,
 		},
 		HeightV: 0,
-		TxsV:    []snowstorm.Tx{tx1},
+		TxsV:    []conflicts.Tx{&testTx{Tr: tr1}},
 		BytesV:  vtxBytes0,
 	}
 	vtx1 := &avalanche.TestVertex{
@@ -381,7 +378,7 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0}, // Depends on vtx0
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{&testTx{Tr: tr0}},
 		BytesV:   vtxBytes1,
 	}
 
@@ -455,6 +452,27 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 
 	vm.CantBootstrapped = false
 
+	vm.GetF = func(txID ids.ID) (conflicts.Transition, error) {
+		switch txID {
+		case trID0:
+			return tr0, nil
+		case trID1:
+			return tr1, nil
+		default:
+			return nil, errUnknownTx
+		}
+	}
+	manager.ParseTxF = func(b []byte) (conflicts.Tx, error) {
+		switch {
+		case bytes.Equal(b, trBytes0):
+			return &testTx{Tr: tr0}, nil
+		case bytes.Equal(b, trBytes1):
+			return &testTx{Tr: tr1}, nil
+		default:
+			return nil, errors.New("wrong tx")
+		}
+	}
+
 	if err := bs.MultiPut(peerID, *reqIDPtr, [][]byte{vtxBytes0}); err != nil {
 		t.Fatal(err)
 	}
@@ -462,10 +480,10 @@ func TestBootstrapperTxDependencies(t *testing.T) {
 	if !*finished {
 		t.Fatalf("Should have finished bootstrapping")
 	}
-	if tx0.Status() != choices.Accepted {
+	if tr0.Status() != choices.Accepted {
 		t.Fatalf("Tx should be accepted")
 	}
-	if tx1.Status() != choices.Accepted {
+	if tr1.Status() != choices.Accepted {
 		t.Fatalf("Tx should be accepted")
 	}
 
@@ -483,25 +501,23 @@ func TestBootstrapperMissingTxDependency(t *testing.T) {
 
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	txID0 := ids.GenerateTestID()
-	txID1 := ids.GenerateTestID()
+	trID0 := ids.GenerateTestID()
+	trID1 := ids.GenerateTestID()
 
-	txBytes1 := []byte{1}
+	trBytes1 := []byte{1}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
-		IDV:     txID0,
+	tr0 := &conflicts.TestTransition{
+		IDV:     trID0,
 		StatusV: choices.Unknown,
-	}}
-
-	tx1 := &snowstorm.TestTx{
-		TestDecidable: choices.TestDecidable{
-			IDV:     txID1,
-			StatusV: choices.Processing,
-		},
-		DependenciesV: []snowstorm.Tx{tx0},
-		BytesV:        txBytes1,
 	}
-	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
+
+	tr1 := &conflicts.TestTransition{
+		IDV:           trID1,
+		StatusV:       choices.Processing,
+		DependenciesV: []conflicts.Transition{tr0},
+		InputIDsV:     []ids.ID{utxos[1]},
+		BytesV:        trBytes1,
+	}
 
 	vtxID0 := ids.GenerateTestID()
 	vtxID1 := ids.GenerateTestID()
@@ -524,7 +540,7 @@ func TestBootstrapperMissingTxDependency(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0}, // depends on vtx0
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx1},
+		TxsV:     []conflicts.Tx{&testTx{Tr: tr1}},
 		BytesV:   vtxBytes1,
 	}
 
@@ -581,6 +597,15 @@ func TestBootstrapperMissingTxDependency(t *testing.T) {
 
 	vm.CantBootstrapping = false
 
+	vm.GetF = func(trID ids.ID) (conflicts.Transition, error) {
+		switch trID {
+		case trID1:
+			return tr1, nil
+		default:
+			return nil, errUnknownTx
+		}
+	}
+
 	if err := bs.ForceAccepted(acceptedIDs); err != nil { // should request vtx1
 		t.Fatal(err)
 	}
@@ -594,10 +619,10 @@ func TestBootstrapperMissingTxDependency(t *testing.T) {
 	if !*finished {
 		t.Fatalf("Bootstrapping should have finished")
 	}
-	if tx0.Status() != choices.Unknown { // never saw this tx
+	if tr0.Status() != choices.Unknown { // never saw this tx
 		t.Fatalf("Tx should be unknown")
 	}
-	if tx1.Status() != choices.Processing { // can't accept because we don't have tx0
+	if tr1.Status() != choices.Processing { // can't accept because we don't have tx0
 		t.Fatalf("Tx should be processing")
 	}
 
@@ -1093,3 +1118,22 @@ func TestBootstrapperAcceptsMultiPutParents(t *testing.T) {
 		t.Fatalf("Vertex should be accepted")
 	}
 }
+
+var (
+	_ conflicts.Tx = &testTx{}
+)
+
+type testTx struct {
+	Ep uint32
+	Tr conflicts.Transition
+}
+
+func (t *testTx) ID() ids.ID                       { return t.Tr.ID() }
+func (t *testTx) Accept() error                    { return t.Tr.Accept(t.Ep) }
+func (t *testTx) Reject() error                    { return t.Tr.Reject(t.Ep) }
+func (t *testTx) Status() choices.Status           { return t.Tr.Status() }
+func (t *testTx) Transition() conflicts.Transition { return t.Tr }
+func (t *testTx) Epoch() uint32                    { return t.Ep }
+func (t *testTx) Restrictions() []ids.ID           { return nil }
+func (t *testTx) Verify() error                    { return t.Tr.Verify(t.Ep) }
+func (t *testTx) Bytes() []byte                    { return t.Tr.Bytes() }

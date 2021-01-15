@@ -8,6 +8,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 
 	sbcon "github.com/ava-labs/avalanchego/snow/consensus/snowball"
 )
@@ -19,21 +20,10 @@ type Consensus interface {
 	fmt.Stringer
 
 	// Takes in the context, alpha, betaVirtuous, and betaRogue
-	Initialize(*snow.Context, sbcon.Parameters) error
+	Initialize(*snow.Context, Conflicts, sbcon.Parameters) error
 
 	// Returns the parameters that describe this snowstorm instance
 	Parameters() sbcon.Parameters
-
-	// Returns true if transaction <Tx> is virtuous.
-	// That is, no transaction has been added that conflicts with <Tx>
-	IsVirtuous(Tx) bool
-
-	// Adds a new transaction to vote on. Returns if a critical error has
-	// occurred.
-	Add(Tx) error
-
-	// Returns true iff transaction <Tx> has been added
-	Issued(Tx) bool
 
 	// Returns the set of virtuous transactions
 	// that have not yet been accepted or rejected
@@ -41,14 +31,6 @@ type Consensus interface {
 
 	// Returns the currently preferred transactions to be finalized
 	Preferences() ids.Set
-
-	// Returns the set of transactions conflicting with <Tx>
-	Conflicts(Tx) ids.Set
-
-	// Collects the results of a network poll. Assumes all transactions
-	// have been previously added. Returns true is any statuses or preferences
-	// changed. Returns if a critical error has occurred.
-	RecordPoll(ids.Bag) (bool, error)
 
 	// Returns true iff all remaining transactions are rogue. Note, it is
 	// possible that after returning quiesce, a new decision may be added such
@@ -60,9 +42,28 @@ type Consensus interface {
 	// that this instance is no longer finalized.
 	Finalized() bool
 
-	// Accept the provided tx remove it from the graph
-	accept(txID ids.ID) error
+	// Returns true if transaction <Tx> is virtuous.
+	// That is, no transaction has been added that conflicts with <Tx>
+	IsVirtuous(conflicts.Tx) (bool, error)
 
-	// Reject all the provided txs and remove them from the graph
-	reject(txIDs ids.Set) error
+	// Returns the set of transactions conflicting with <Tx>
+	Conflicts(conflicts.Tx) (ids.Set, error)
+
+	// Returns true iff transaction <Tx> has been added
+	Issued(conflicts.Tx) bool
+
+	// Returns true iff a transaction with the named transition is processing
+	Processing(ids.ID) bool
+
+	// Adds a new transaction to vote on.
+	Add(conflicts.Tx)
+
+	// Get the named transaction. If the transaction isn't currently being
+	// processed by the consensus instance, then an error will be returned.
+	Get(ids.ID) (conflicts.Tx, error)
+
+	// Collects the results of a network poll. Assumes all transactions
+	// have been previously added. Returns true is any statuses or preferences
+	// changed. Returns if a critical error has occurred.
+	RecordPoll(ids.Bag) (bool, error)
 }

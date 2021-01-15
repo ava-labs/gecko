@@ -61,6 +61,7 @@ type BuildGenesisReply struct {
 func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, reply *BuildGenesisReply) error {
 	errs := wrappers.Errs{}
 
+	// TODO use genesisCodec() here instead
 	c := linearcodec.New(reflectcodec.DefaultTagName, 1<<20)
 	manager := codec.NewManager(math.MaxUint32)
 	errs.Add(
@@ -74,7 +75,7 @@ func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, r
 		c.RegisterType(&secp256k1fx.TransferOutput{}),
 		c.RegisterType(&secp256k1fx.MintOperation{}),
 		c.RegisterType(&secp256k1fx.Credential{}),
-		manager.RegisterCodec(codecVersion, c),
+		manager.RegisterCodec(preApricotCodecVersion, c),
 	)
 	if errs.Errored() {
 		return errs.Err
@@ -138,7 +139,7 @@ func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, r
 						if err != nil {
 							return fmt.Errorf("problem marshaling state: %w", err)
 						}
-						owners := Owners{}
+						owners := Minters{}
 						if err := json.Unmarshal(b, &owners); err != nil {
 							return fmt.Errorf("problem unmarshaling Owners: %w", err)
 						}
@@ -167,7 +168,7 @@ func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, r
 					return errUnknownAssetType
 				}
 			}
-			initialState.Sort(manager)
+			initialState.Sort(manager, preApricotCodecVersion)
 			asset.States = append(asset.States, initialState)
 		}
 		asset.Sort()
@@ -175,7 +176,7 @@ func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, r
 	}
 	g.Sort()
 
-	b, err := manager.Marshal(codecVersion, &g)
+	b, err := manager.Marshal(preApricotCodecVersion, &g)
 	if err != nil {
 		return fmt.Errorf("problem marshaling genesis: %w", err)
 	}

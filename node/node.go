@@ -67,7 +67,7 @@ var (
 	genesisHashKey = []byte("genesisID")
 
 	// Version is the version of this code
-	Version                 = version.NewDefaultVersion(constants.PlatformName, 1, 1, 2)
+	Version                 = version.NewDefaultVersion(constants.PlatformName, 1, 2, 0)
 	versionParser           = version.NewDefaultParser()
 	beaconConnectionTimeout = 1 * time.Minute
 )
@@ -244,7 +244,7 @@ func (n *Node) initNetworking() error {
 		n.Config.RestartOnDisconnected,
 		n.Config.DisconnectedCheckFreq,
 		n.Config.DisconnectedRestartTimeout,
-		n.Config.ApricotPhase0Time,
+		n.Config.EpochFirstTransition,
 		n.Config.SendQueueSize,
 	)
 

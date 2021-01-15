@@ -46,6 +46,6 @@ func TestBuildValid(t *testing.T) {
 	assert.Equal(t, height, vtx.Height())
 	assert.Equal(t, epoch, vtx.Epoch())
 	assert.Equal(t, parentIDs, vtx.ParentIDs())
-	assert.Equal(t, txs, vtx.Txs())
+	assert.Equal(t, txs, vtx.Transitions())
 	assert.Equal(t, restrictions, vtx.Restrictions())
 }

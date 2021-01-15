@@ -26,7 +26,6 @@ var (
 	errUnmarshalNil      = errors.New("can't unmarshal nil")
 	errCantPackVersion   = errors.New("couldn't pack codec version")
 	errCantUnpackVersion = errors.New("couldn't unpack codec version")
-	errUnknownVersion    = errors.New("unknown codec version")
 	errDuplicatedVersion = errors.New("duplicated codec version")
 )
 
@@ -97,7 +96,7 @@ func (m *manager) Marshal(version uint16, value interface{}) ([]byte, error) {
 	m.lock.RUnlock()
 
 	if !exists {
-		return nil, errUnknownVersion
+		return nil, fmt.Errorf("unknown codec version %d", version)
 	}
 
 	p := wrappers.Packer{
@@ -137,7 +136,7 @@ func (m *manager) Unmarshal(bytes []byte, dest interface{}) (uint16, error) {
 	c, exists := m.codecs[version]
 	m.lock.RUnlock()
 	if !exists {
-		return version, errUnknownVersion
+		return version, fmt.Errorf("unknown codec version %d", version)
 	}
 	return version, c.Unmarshal(p.Bytes[p.Offset:], dest)
 }

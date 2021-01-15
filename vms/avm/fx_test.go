@@ -15,13 +15,15 @@ type FxTest struct {
 	CantBootstrapping,
 	CantBootstrapped,
 	CantVerifyTransfer,
+	CantVerifyPermission,
 	CantVerifyOperation bool
 
-	InitializeF      func(vm interface{}) error
-	BootstrappingF   func() error
-	BootstrappedF    func() error
-	VerifyTransferF  func(tx, in, cred, utxo interface{}) error
-	VerifyOperationF func(tx, op, cred interface{}, utxos []interface{}) error
+	InitializeF       func(vm interface{}) error
+	BootstrappingF    func() error
+	BootstrappedF     func() error
+	VerifyTransferF   func(in, utxo interface{}) error
+	VerifyPermissionF func(tx, in, cred, utxo interface{}) error
+	VerifyOperationF  func(tx, op, cred interface{}, utxos []interface{}) error
 }
 
 // Default ...
@@ -72,9 +74,9 @@ func (fx *FxTest) Bootstrapped() error {
 	return errors.New("Unexpectedly called Bootstrapped")
 }
 
-func (fx *FxTest) VerifyTransfer(tx, in, cred, utxo interface{}) error {
+func (fx *FxTest) VerifyTransfer(in, utxo interface{}) error {
 	if fx.VerifyTransferF != nil {
-		return fx.VerifyTransferF(tx, in, cred, utxo)
+		return fx.VerifyTransferF(in, utxo)
 	}
 	if !fx.CantVerifyTransfer {
 		return nil
@@ -83,6 +85,19 @@ func (fx *FxTest) VerifyTransfer(tx, in, cred, utxo interface{}) error {
 		fx.T.Fatalf("Unexpectedly called VerifyTransfer")
 	}
 	return errors.New("Unexpectedly called VerifyTransfer")
+}
+
+func (fx *FxTest) VerifyPermission(tx, in, cred, utxo interface{}) error {
+	if fx.VerifyPermissionF != nil {
+		return fx.VerifyPermissionF(tx, in, cred, utxo)
+	}
+	if !fx.CantVerifyPermission {
+		return nil
+	}
+	if fx.T != nil {
+		fx.T.Fatalf("Unexpectedly called VerifyPermission")
+	}
+	return errors.New("Unexpectedly called VerifyPermission")
 }
 
 func (fx *FxTest) VerifyOperation(tx, op, cred interface{}, utxos []interface{}) error {
