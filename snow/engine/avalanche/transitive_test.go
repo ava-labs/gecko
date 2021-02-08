@@ -4947,3 +4947,223 @@ func TestEngineTransitionDependencyAbandoned(t *testing.T) {
 	assert.Len(t, te.missingTransitions, 0)
 	assert.Len(t, te.trBlocked, 0)
 }
+
+func TestEngineAbandonDependencyFulfilledInFutureEpoch(t *testing.T) {
+	// Setup
+	config := DefaultConfig()
+	vals := validators.NewSet()
+	config.Validators = vals
+	vdr := ids.GenerateTestShortID()
+	err := vals.AddWeight(vdr, 1)
+	assert.NoError(t, err)
+	sender := &common.SenderTest{}
+	sender.T = t
+	sender.CantGet = false
+	config.Sender = sender
+	manager := vertex.NewTestManager(t)
+	config.Manager = manager
+	vm := &vertex.TestVM{}
+	vm.T = t
+	config.VM = vm
+	vm.Default(true)
+	manager.Default(true)
+	manager.CantEdge = false
+	vm.CantBootstrapping = false
+	vm.CantBootstrapped = false
+	vm.CantParse = false
+	te := &Transitive{}
+	if err := te.Initialize(config); err != nil {
+		t.Fatal(err)
+	}
+	te.Ctx.Clock.Set(te.Ctx.EpochFirstTransition.Add(1 * te.Ctx.EpochDuration))
+
+	// Scenario:
+	// gVtx is accepted and the only vtx in the frontier
+	// trC depends on trB and trA
+	// trA is in vtxA1 and vtxA2 in epochs 1 and 2 respectively
+	// both are issued to consensus
+	// trC is added to vtxC and is pending issuance on trB getting
+	// added to consensus.
+	// engine receives two Chits messages for vtxA2 (requires two because
+	// it is not virtuous once it's issued in two epochs).
+	// Thus trA should be accepted into epoch 2, so the issuer for vtxC
+	// should be abandoned since its dependency will not be fulfilled in
+	// its epoch.
+	currentEpoch := te.Ctx.Epoch()
+	priorEpoch := currentEpoch - 1
+	gVtx := &avalanche.TestVertex{TestDecidable: choices.TestDecidable{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Accepted,
+	}}
+	trA := &conflicts.TestTransition{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Unknown,
+	}
+	trB := &conflicts.TestTransition{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Unknown,
+	}
+	trC := &conflicts.TestTransition{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Unknown,
+		DependenciesV: []conflicts.Transition{
+			trA,
+			trB,
+		},
+	}
+	txA1 := &conflicts.TestTx{
+		BytesV: utils.RandomBytes(32),
+		EpochV: priorEpoch,
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		TransitionV: trA,
+	}
+	txA2 := &conflicts.TestTx{
+		BytesV: utils.RandomBytes(32),
+		EpochV: currentEpoch,
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		TransitionV: trA,
+	}
+	txB := &conflicts.TestTx{
+		BytesV: utils.RandomBytes(32),
+		EpochV: priorEpoch,
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		TransitionV: trB,
+	}
+	txC := &conflicts.TestTx{
+		BytesV: utils.RandomBytes(32),
+		EpochV: priorEpoch,
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		TransitionV: trC,
+	}
+	vtxA1 := &avalanche.TestVertex{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		EpochV:   priorEpoch,
+		ParentsV: []avalanche.Vertex{gVtx},
+		HeightV:  1,
+		TxsV:     []conflicts.Tx{txA1},
+		BytesV:   utils.RandomBytes(32),
+	}
+	vtxA2 := &avalanche.TestVertex{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		EpochV:   currentEpoch,
+		ParentsV: []avalanche.Vertex{gVtx},
+		HeightV:  1,
+		TxsV:     []conflicts.Tx{txA2},
+		BytesV:   utils.RandomBytes(32),
+	}
+	vtxB := &avalanche.TestVertex{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		EpochV:   priorEpoch,
+		ParentsV: []avalanche.Vertex{gVtx},
+		HeightV:  1,
+		TxsV:     []conflicts.Tx{txB},
+		BytesV:   utils.RandomBytes(32),
+	}
+	vtxC := &avalanche.TestVertex{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Unknown,
+		},
+		EpochV:   priorEpoch,
+		ParentsV: []avalanche.Vertex{vtxA1, vtxB},
+		HeightV:  2,
+		TxsV:     []conflicts.Tx{txC},
+		BytesV:   utils.RandomBytes(32),
+	}
+
+	// Tell engine to issue vtxA2 by sending push query from [vdr]
+	manager.ParseF = func(b []byte) (avalanche.Vertex, error) {
+		assert.Equal(t, b, vtxA2.Bytes())
+		vtxA2.StatusV = choices.Processing
+		txA2.StatusV = choices.Processing
+		trA.StatusV = choices.Processing
+		return vtxA2, nil
+	}
+	manager.GetF = func(id ids.ID) (avalanche.Vertex, error) {
+		if id != vtxA2.ID() {
+			assert.FailNow(t, "Called Get for unexpected vtxID: %s", id)
+		}
+		return vtxA2, nil
+	}
+	err = te.PushQuery(vdr, 0, vtxA2.ID(), vtxA2.Bytes())
+	assert.NoError(t, err)
+	assert.True(t, te.Consensus.VertexIssued(vtxA2), "should have issued vtxA2")
+
+	// Tell engine to issue vtxA1 by sending push query from [vdr]
+	manager.ParseF = func(b []byte) (avalanche.Vertex, error) {
+		assert.Equal(t, b, vtxA1.Bytes())
+		vtxA1.StatusV = choices.Processing
+		txA1.StatusV = choices.Processing
+		trA.StatusV = choices.Processing
+		return vtxA1, nil
+	}
+	manager.GetF = func(id ids.ID) (avalanche.Vertex, error) {
+		if id != vtxA1.ID() {
+			assert.FailNow(t, "Called Get for unexpected vtxID: %s", id)
+		}
+		return vtxA1, nil
+	}
+	err = te.PushQuery(vdr, 1, vtxA1.ID(), vtxA1.Bytes())
+	assert.NoError(t, err)
+	assert.True(t, te.Consensus.VertexIssued(vtxA1), "should have issued vtxA1")
+
+	// Attempt to issue vtxC, which will be blocked on the issuance
+	// of vtxB containing its other transition dependency.
+	manager.ParseF = func(b []byte) (avalanche.Vertex, error) {
+		assert.Equal(t, b, vtxC.Bytes())
+		vtxC.StatusV = choices.Processing
+		txC.StatusV = choices.Processing
+		trC.StatusV = choices.Processing
+		return vtxC, nil
+	}
+	manager.GetF = func(id ids.ID) (avalanche.Vertex, error) {
+		if id != vtxC.ID() {
+			assert.FailNow(t, "Unexpectedly called Get for vtxID: %s", id)
+		}
+		return vtxC, nil
+	}
+	err = te.PushQuery(vdr, 2, vtxC.ID(), vtxC.Bytes())
+	assert.NoError(t, err)
+	assert.False(t, te.Consensus.VertexIssued(vtxC), "should not have issued vtxC")
+	assert.True(t, te.pending.Contains(vtxC.ID()), "vtxC should have been in pending")
+
+	manager.GetF = func(id ids.ID) (avalanche.Vertex, error) {
+		if id != vtxA2.ID() {
+			assert.FailNow(t, "Unexpectedly called Get for vtxID: %s", id)
+		}
+		return vtxA2, nil
+	}
+	// Record two consecutive Chits messages for vtxA2 for the first two polls
+	err = te.Chits(vdr, 0, []ids.ID{vtxA2.ID()})
+	assert.NoError(t, err, "unexpected error calling Chits with vtxA2")
+	assert.Equal(t, choices.Processing, vtxA2.Status(), "expected vtxA2 to be Processing")
+
+	err = te.Chits(vdr, 1, []ids.ID{vtxA2.ID()})
+	assert.NoError(t, err, "unexpected error calling Chits with vtxA2")
+	assert.Equal(t, choices.Accepted, vtxA2.Status(), "expected vtxA2 to be Processing")
+
+	// // Since trA was accepted into epoch 2, vtxC (epoch 1) should be abandoned because its
+	// // transaction txC has a dependency that will be fulfilled in epoch 2.
+	assert.False(t, te.pending.Contains(vtxC.ID()), "vtxC should have been abandoned")
+}

@@ -11,11 +11,34 @@ import (
 
 // issuer issues [vtx] into consensus after its dependencies are met.
 type issuer struct {
-	t                 *Transitive
-	vtx               avalanche.Vertex
+	t *Transitive
+	// [vtx] attempting to be issued to consensus by this issuer
+	vtx avalanche.Vertex
+	// if [updatedEpoch] is true, any transactions that fail verification
+	// will be restricted into the current epoch. Otherwise, transactions
+	// that fail verification will simply be ignored.
 	updatedEpoch      bool
 	issued, abandoned bool
-	vtxDeps, trDeps   ids.Set
+	// [vtxDeps] is the set of vertices that must be issued
+	// before [vtx] can be issued to consensus.
+	vtxDeps ids.Set
+
+	// Note:
+	// [trIssuer] must return all unfulfilled dependencies (including those
+	// that have been issued into the epoch of [vtx]) in order to be notified
+	// if any of these unfulfilled dependencies are accepted in a future epoch
+	// such that we can abandon [vtx].
+	// [trDeps] and [unfulfilledDeps] are kept as two separate
+	// sets so that trIssuer's Dependency call is O(1) instead of requiring
+	// the union of the set of fulfilled and unfulfilled transitions.
+
+	// [trDeps] is the set of transitions that the transactions
+	// in [vtx] depend on and must be issued to consensus in the
+	// same epoch as [vtx] or accepted in an epoch <= [vtx].
+	trDeps ids.Set
+	// [unfulfilledDeps] is the set of transitions in [trDeps]
+	// that have not yet fulfilled the above requirements.
+	unfulfilledDeps ids.Set
 }
 
 // Register that a vertex we were waiting on has been issued to consensus.
@@ -26,7 +49,7 @@ func (i *issuer) FulfillVtx(id ids.ID) {
 
 // Register that a transition we were waiting on has been issued to consensus.
 func (i *issuer) FulfillTr(id ids.ID) {
-	i.trDeps.Remove(id)
+	i.unfulfilledDeps.Remove(id)
 	i.Update()
 }
 
@@ -42,7 +65,7 @@ func (i *issuer) Abandon() {
 
 // Issue the poll when all dependencies are met
 func (i *issuer) Update() {
-	if i.abandoned || i.issued || i.vtxDeps.Len() != 0 || i.trDeps.Len() != 0 || i.t.Consensus.VertexIssued(i.vtx) || i.t.errs.Errored() {
+	if i.abandoned || i.issued || i.vtxDeps.Len() != 0 || i.unfulfilledDeps.Len() != 0 || i.t.Consensus.VertexIssued(i.vtx) || i.t.errs.Errored() {
 		return
 	}
 	// All dependencies have been met

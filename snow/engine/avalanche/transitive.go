@@ -490,6 +490,10 @@ func (t *Transitive) issue(vtx avalanche.Vertex, updatedEpoch bool) error {
 				continue
 			}
 
+			// Add [depID] to the set of transitions that this issuer
+			// is blocking on.
+			i.trDeps.Add(depID)
+
 			// [processingDepTxs] is a list of processing txs that contain
 			// dependency [depID].
 			processingDepTxs := t.Consensus.ProcessingTxs(depID)
@@ -510,7 +514,7 @@ func (t *Transitive) issue(vtx avalanche.Vertex, updatedEpoch bool) error {
 				t.missingTransitions[epoch] = missing
 				// Mark that depenency [depID] is not accepted in an earlier
 				// epoch and is not processing in the current epoch
-				i.trDeps.Add(depID)
+				i.unfulfilledDeps.Add(depID)
 			}
 		}
 	}
