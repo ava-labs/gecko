@@ -12,7 +12,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche/poll"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/bootstrap"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
@@ -497,7 +497,7 @@ func (t *Transitive) issue(vtx avalanche.Vertex) error {
 // If [force] is true, forces each tx to be issued.
 // Otherwise, some txs may not be put into vertices that are issued.
 // If [empty], will always result in a new poll.
-func (t *Transitive) batch(txs []snowstorm.Tx, force, empty bool) error {
+func (t *Transitive) batch(txs []conflicts.Tx, force, empty bool) error {
 	issuedTxs := ids.Set{}
 	consumed := ids.Set{}
 	issued := false
@@ -519,9 +519,13 @@ func (t *Transitive) batch(txs []snowstorm.Tx, force, empty bool) error {
 			overlaps = false
 		}
 
+		isVirtuous, err := t.Consensus.IsVirtuous(tx)
+		if err != nil {
+			return err
+		}
 		if txID := tx.ID(); !overlaps && // should never allow conflicting txs in the same vertex
+			(force || isVirtuous) && // force allows for a conflict to be issued
 			!issuedTxs.Contains(txID) && // shouldn't issue duplicated transactions to the same vertex
-			(force || t.Consensus.IsVirtuous(tx)) && // force allows for a conflict to be issued
 			(!t.Consensus.TxIssued(tx) || orphans.Contains(txID)) { // should only reissue orphaned txs
 			end++
 			issuedTxs.Add(txID)
@@ -570,7 +574,7 @@ func (t *Transitive) issueRepoll() {
 }
 
 // Puts a batch of transactions into a vertex and issues it into consensus.
-func (t *Transitive) issueBatch(txs []snowstorm.Tx) error {
+func (t *Transitive) issueBatch(txs []conflicts.Tx) error {
 	t.Ctx.Log.Verbo("batching %d transactions into a new vertex", len(txs))
 
 	// Randomly select parents of this vertex from among the virtuous set

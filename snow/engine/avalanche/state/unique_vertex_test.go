@@ -11,11 +11,11 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 )
 
-func newSerializer(t *testing.T, parse func([]byte) (snowstorm.Tx, error)) *Serializer {
+func newSerializer(t *testing.T, parse func([]byte) (conflicts.Tx, error)) *Serializer {
 	vm := vertex.TestVM{}
 	vm.T = t
 	vm.Default(true)
@@ -58,11 +58,11 @@ func TestUnknownUniqueVertexErrors(t *testing.T) {
 }
 
 func TestUniqueVertexCacheHit(t *testing.T) {
-	testTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	testTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV: ids.ID{1},
 	}}
 
-	s := newSerializer(t, func(b []byte) (snowstorm.Tx, error) {
+	s := newSerializer(t, func(b []byte) (conflicts.Tx, error) {
 		if !bytes.Equal(b, []byte{0}) {
 			t.Fatal("unknown tx")
 		}
@@ -136,13 +136,13 @@ func TestUniqueVertexCacheHit(t *testing.T) {
 
 func TestUniqueVertexCacheMiss(t *testing.T) {
 	txBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
-	testTx := &snowstorm.TestTx{
+	testTx := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV: ids.ID{1},
 		},
 		BytesV: txBytes,
 	}
-	parseTx := func(b []byte) (snowstorm.Tx, error) {
+	parseTx := func(b []byte) (conflicts.Tx, error) {
 		if !bytes.Equal(txBytes, b) {
 			t.Fatal("asked to parse unexpected transaction")
 		}

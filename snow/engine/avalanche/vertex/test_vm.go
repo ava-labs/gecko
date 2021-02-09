@@ -7,7 +7,7 @@ import (
 	"errors"
 
 	"github.com/ava-labs/avalanchego/ids"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 )
 
@@ -22,9 +22,9 @@ type TestVM struct {
 
 	CantPending, CantParse, CantGet bool
 
-	PendingF func() []snowstorm.Tx
-	ParseF   func([]byte) (snowstorm.Tx, error)
-	GetF     func(ids.ID) (snowstorm.Tx, error)
+	PendingF func() []conflicts.Tx
+	ParseF   func([]byte) (conflicts.Tx, error)
+	GetF     func(ids.ID) (conflicts.Tx, error)
 }
 
 func (vm *TestVM) Default(cant bool) {
@@ -35,7 +35,7 @@ func (vm *TestVM) Default(cant bool) {
 	vm.CantGet = cant
 }
 
-func (vm *TestVM) Pending() []snowstorm.Tx {
+func (vm *TestVM) Pending() []conflicts.Tx {
 	if vm.PendingF != nil {
 		return vm.PendingF()
 	}
@@ -45,7 +45,7 @@ func (vm *TestVM) Pending() []snowstorm.Tx {
 	return nil
 }
 
-func (vm *TestVM) Parse(b []byte) (snowstorm.Tx, error) {
+func (vm *TestVM) Parse(b []byte) (conflicts.Tx, error) {
 	if vm.ParseF != nil {
 		return vm.ParseF(b)
 	}
@@ -55,7 +55,7 @@ func (vm *TestVM) Parse(b []byte) (snowstorm.Tx, error) {
 	return nil, errParse
 }
 
-func (vm *TestVM) Get(txID ids.ID) (snowstorm.Tx, error) {
+func (vm *TestVM) Get(txID ids.ID) (conflicts.Tx, error) {
 	if vm.GetF != nil {
 		return vm.GetF(txID)
 	}

@@ -6,7 +6,7 @@ package avalanche
 import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 // issuer issues [vtx] into consensus after its dependencies are met.
@@ -56,7 +56,7 @@ func (i *issuer) Update() {
 		i.t.errs.Add(err)
 		return
 	}
-	validTxs := make([]snowstorm.Tx, 0, len(txs))
+	validTxs := make([]conflicts.Tx, 0, len(txs))
 	for _, tx := range txs {
 		if err := tx.Verify(); err != nil {
 			i.t.Ctx.Log.Debug("Transaction %s failed verification due to %s", tx.ID(), err)

@@ -16,7 +16,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
 	"github.com/ava-labs/avalanchego/snow/consensus/snowball"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
 	"github.com/ava-labs/avalanchego/snow/validators"
@@ -183,7 +183,7 @@ func TestEngineQuery(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx, mVtx}
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -196,7 +196,7 @@ func TestEngineQuery(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 		BytesV:   []byte{0, 1, 2, 3},
 	}
 
@@ -309,7 +309,7 @@ func TestEngineQuery(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 		BytesV:   []byte{5, 4, 3, 2, 1, 9},
 	}
 
@@ -474,7 +474,7 @@ func TestEngineMultipleQuery(t *testing.T) {
 		panic("Should have errored")
 	}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -487,7 +487,7 @@ func TestEngineMultipleQuery(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 	}
 
 	te := &Transitive{}
@@ -524,7 +524,7 @@ func TestEngineMultipleQuery(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 	}
 
 	manager.GetF = func(id ids.ID) (avalanche.Vertex, error) {
@@ -615,7 +615,7 @@ func TestEngineBlockedIssue(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx, mVtx}
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -628,7 +628,7 @@ func TestEngineBlockedIssue(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 	}
 
 	vtx1 := &avalanche.TestVertex{
@@ -643,7 +643,7 @@ func TestEngineBlockedIssue(t *testing.T) {
 			}},
 		},
 		HeightV: 1,
-		TxsV:    []snowstorm.Tx{tx0},
+		TxsV:    []conflicts.Tx{tx0},
 	}
 
 	te := &Transitive{}
@@ -697,7 +697,7 @@ func TestEngineAbandonResponse(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx, mVtx}
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -710,7 +710,7 @@ func TestEngineAbandonResponse(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 	}
 
 	manager.GetF = func(id ids.ID) (avalanche.Vertex, error) { return nil, errUnknownVertex }
@@ -760,7 +760,7 @@ func TestEngineScheduleRepoll(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx, mVtx}
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -773,7 +773,7 @@ func TestEngineScheduleRepoll(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 	}
 
 	manager := vertex.NewTestManager(t)
@@ -862,28 +862,28 @@ func TestEngineRejectDoubleSpendTx(t *testing.T) {
 		StatusV: choices.Accepted,
 	}}
 
-	gTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	gTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Accepted,
 	}}
 
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{
+	tx0 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[0])
 
@@ -898,7 +898,7 @@ func TestEngineRejectDoubleSpendTx(t *testing.T) {
 		t.Fatalf("Unknown vertex")
 		panic("Should have errored")
 	}
-	manager.BuildF = func(_ uint32, _ []ids.ID, txs []snowstorm.Tx, _ []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(_ uint32, _ []ids.ID, txs []conflicts.Tx, _ []ids.ID) (avalanche.Vertex, error) {
 		return &avalanche.TestVertex{
 			TestDecidable: choices.TestDecidable{
 				IDV:     ids.GenerateTestID(),
@@ -924,7 +924,7 @@ func TestEngineRejectDoubleSpendTx(t *testing.T) {
 
 	sender.CantPushQuery = false
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx0, tx1} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx0, tx1} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
@@ -970,28 +970,28 @@ func TestEngineRejectDoubleSpendIssuedTx(t *testing.T) {
 		StatusV: choices.Accepted,
 	}}
 
-	gTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	gTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Accepted,
 	}}
 
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{
+	tx0 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[0])
 
@@ -1017,7 +1017,7 @@ func TestEngineRejectDoubleSpendIssuedTx(t *testing.T) {
 
 	vm.CantBootstrapping = true
 	vm.CantBootstrapped = true
-	manager.BuildF = func(_ uint32, _ []ids.ID, txs []snowstorm.Tx, _ []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(_ uint32, _ []ids.ID, txs []conflicts.Tx, _ []ids.ID) (avalanche.Vertex, error) {
 		return &avalanche.TestVertex{
 			TestDecidable: choices.TestDecidable{
 				IDV:     ids.GenerateTestID(),
@@ -1032,12 +1032,12 @@ func TestEngineRejectDoubleSpendIssuedTx(t *testing.T) {
 
 	sender.CantPushQuery = false
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx0} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx0} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx1} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx1} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
@@ -1151,46 +1151,46 @@ func TestEngineReissue(t *testing.T) {
 		StatusV: choices.Accepted,
 	}}
 
-	gTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	gTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Accepted,
 	}}
 
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{
+	tx0 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
 
-	tx2 := &snowstorm.TestTx{
+	tx2 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx2.InputIDsV = append(tx2.InputIDsV, utxos[1])
 
-	tx3 := &snowstorm.TestTx{
+	tx3 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx3.InputIDsV = append(tx3.InputIDsV, utxos[0])
 
@@ -1201,7 +1201,7 @@ func TestEngineReissue(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{gVtx, mVtx},
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx2},
+		TxsV:     []conflicts.Tx{tx2},
 		BytesV:   []byte{42},
 	}
 
@@ -1231,7 +1231,7 @@ func TestEngineReissue(t *testing.T) {
 	vm.CantBootstrapped = true
 
 	lastVtx := new(avalanche.TestVertex)
-	manager.BuildF = func(_ uint32, _ []ids.ID, txs []snowstorm.Tx, _ []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(_ uint32, _ []ids.ID, txs []conflicts.Tx, _ []ids.ID) (avalanche.Vertex, error) {
 		lastVtx = &avalanche.TestVertex{
 			TestDecidable: choices.TestDecidable{
 				IDV:     ids.GenerateTestID(),
@@ -1245,7 +1245,7 @@ func TestEngineReissue(t *testing.T) {
 		return lastVtx, nil
 	}
 
-	vm.GetF = func(id ids.ID) (snowstorm.Tx, error) {
+	vm.GetF = func(id ids.ID) (conflicts.Tx, error) {
 		if id != tx0.ID() {
 			t.Fatalf("Wrong tx")
 		}
@@ -1257,7 +1257,7 @@ func TestEngineReissue(t *testing.T) {
 		*queryRequestID = requestID
 	}
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx0, tx1} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx0, tx1} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
@@ -1273,7 +1273,7 @@ func TestEngineReissue(t *testing.T) {
 	}
 	manager.ParseF = nil
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx3} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx3} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
@@ -1328,28 +1328,28 @@ func TestEngineLargeIssue(t *testing.T) {
 		StatusV: choices.Accepted,
 	}}
 
-	gTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	gTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Accepted,
 	}}
 
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{
+	tx0 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
 
@@ -1377,7 +1377,7 @@ func TestEngineLargeIssue(t *testing.T) {
 	vm.CantBootstrapped = true
 
 	lastVtx := new(avalanche.TestVertex)
-	manager.BuildF = func(_ uint32, _ []ids.ID, txs []snowstorm.Tx, _ []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(_ uint32, _ []ids.ID, txs []conflicts.Tx, _ []ids.ID) (avalanche.Vertex, error) {
 		lastVtx = &avalanche.TestVertex{
 			TestDecidable: choices.TestDecidable{
 				IDV:     ids.GenerateTestID(),
@@ -1393,7 +1393,7 @@ func TestEngineLargeIssue(t *testing.T) {
 
 	sender.CantPushQuery = false
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx0, tx1} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx0, tx1} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
@@ -2199,18 +2199,18 @@ func TestEngineIssueBlockingTx(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx}
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{tx0},
+		DependenciesV: []conflicts.Tx{tx0},
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
 
@@ -2221,7 +2221,7 @@ func TestEngineIssueBlockingTx(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0, tx1},
+		TxsV:     []conflicts.Tx{tx0, tx1},
 	}
 
 	te := &Transitive{}
@@ -2408,7 +2408,7 @@ func TestEngineBootstrappingIntoConsensus(t *testing.T) {
 	txBytes0 := []byte{0}
 	txBytes1 := []byte{1}
 
-	tx0 := &snowstorm.TestTx{
+	tx0 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     txID0,
 			StatusV: choices.Processing,
@@ -2417,12 +2417,12 @@ func TestEngineBootstrappingIntoConsensus(t *testing.T) {
 	}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     txID1,
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{tx0},
+		DependenciesV: []conflicts.Tx{tx0},
 		BytesV:        txBytes1,
 	}
 	tx1.InputIDsV = append(tx1.InputIDsV, utxos[1])
@@ -2439,7 +2439,7 @@ func TestEngineBootstrappingIntoConsensus(t *testing.T) {
 			StatusV: choices.Processing,
 		},
 		HeightV: 1,
-		TxsV:    []snowstorm.Tx{tx0},
+		TxsV:    []conflicts.Tx{tx0},
 		BytesV:  vtxBytes0,
 	}
 	vtx1 := &avalanche.TestVertex{
@@ -2449,7 +2449,7 @@ func TestEngineBootstrappingIntoConsensus(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0},
 		HeightV:  2,
-		TxsV:     []snowstorm.Tx{tx1},
+		TxsV:     []conflicts.Tx{tx1},
 		BytesV:   vtxBytes1,
 	}
 
@@ -2530,7 +2530,7 @@ func TestEngineBootstrappingIntoConsensus(t *testing.T) {
 	manager.GetF = nil
 	sender.GetF = nil
 
-	vm.ParseF = func(b []byte) (snowstorm.Tx, error) {
+	vm.ParseF = func(b []byte) (conflicts.Tx, error) {
 		if bytes.Equal(b, txBytes0) {
 			return tx0, nil
 		}
@@ -2644,13 +2644,13 @@ func TestEngineUndeclaredDependencyDeadlock(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx}
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
@@ -2666,7 +2666,7 @@ func TestEngineUndeclaredDependencyDeadlock(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 	}
 	vtx1 := &avalanche.TestVertex{
 		TestDecidable: choices.TestDecidable{
@@ -2675,7 +2675,7 @@ func TestEngineUndeclaredDependencyDeadlock(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0},
 		HeightV:  2,
-		TxsV:     []snowstorm.Tx{tx1},
+		TxsV:     []conflicts.Tx{tx1},
 	}
 
 	te := &Transitive{}
@@ -2745,13 +2745,13 @@ func TestEnginePartiallyValidVertex(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx}
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{
+	tx1 := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
@@ -2767,7 +2767,7 @@ func TestEnginePartiallyValidVertex(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0, tx1},
+		TxsV:     []conflicts.Tx{tx0, tx1},
 	}
 
 	te := &Transitive{}
@@ -2776,7 +2776,7 @@ func TestEnginePartiallyValidVertex(t *testing.T) {
 	}
 
 	expectedVtxID := ids.GenerateTestID()
-	manager.BuildF = func(_ uint32, _ []ids.ID, txs []snowstorm.Tx, _ []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(_ uint32, _ []ids.ID, txs []conflicts.Tx, _ []ids.ID) (avalanche.Vertex, error) {
 		return &avalanche.TestVertex{
 			TestDecidable: choices.TestDecidable{
 				IDV:     expectedVtxID,
@@ -2889,13 +2889,13 @@ func TestEngineInvalidVertexIgnoredFromUnexpectedPeer(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx}
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx1 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -2908,7 +2908,7 @@ func TestEngineInvalidVertexIgnoredFromUnexpectedPeer(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 		BytesV:   []byte{1},
 	}
 	vtx1 := &avalanche.TestVertex{
@@ -2918,7 +2918,7 @@ func TestEngineInvalidVertexIgnoredFromUnexpectedPeer(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0},
 		HeightV:  2,
-		TxsV:     []snowstorm.Tx{tx1},
+		TxsV:     []conflicts.Tx{tx1},
 		BytesV:   []byte{2},
 	}
 
@@ -3029,13 +3029,13 @@ func TestEnginePushQueryRequestIDConflict(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx}
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx1 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -3048,7 +3048,7 @@ func TestEnginePushQueryRequestIDConflict(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 		BytesV:   []byte{1},
 	}
 
@@ -3059,7 +3059,7 @@ func TestEnginePushQueryRequestIDConflict(t *testing.T) {
 		},
 		ParentsV: []avalanche.Vertex{vtx0},
 		HeightV:  2,
-		TxsV:     []snowstorm.Tx{tx1},
+		TxsV:     []conflicts.Tx{tx1},
 		BytesV:   []byte{2},
 	}
 
@@ -3184,13 +3184,13 @@ func TestEngineAggressivePolling(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx}
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx0 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
 	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
 
-	tx1 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx1 := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -3203,7 +3203,7 @@ func TestEngineAggressivePolling(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx0},
+		TxsV:     []conflicts.Tx{tx0},
 		BytesV:   []byte{1},
 	}
 
@@ -3299,19 +3299,19 @@ func TestEngineDuplicatedIssuance(t *testing.T) {
 		StatusV: choices.Accepted,
 	}}
 
-	gTx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	gTx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Accepted,
 	}}
 
 	utxos := []ids.ID{ids.GenerateTestID(), ids.GenerateTestID()}
 
-	tx := &snowstorm.TestTx{
+	tx := &conflicts.TestTx{
 		TestDecidable: choices.TestDecidable{
 			IDV:     ids.GenerateTestID(),
 			StatusV: choices.Processing,
 		},
-		DependenciesV: []snowstorm.Tx{gTx},
+		DependenciesV: []conflicts.Tx{gTx},
 	}
 	tx.InputIDsV = append(tx.InputIDsV, utxos[0])
 
@@ -3339,7 +3339,7 @@ func TestEngineDuplicatedIssuance(t *testing.T) {
 	vm.CantBootstrapped = true
 
 	lastVtx := new(avalanche.TestVertex)
-	manager.BuildF = func(_ uint32, _ []ids.ID, txs []snowstorm.Tx, _ []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(_ uint32, _ []ids.ID, txs []conflicts.Tx, _ []ids.ID) (avalanche.Vertex, error) {
 		lastVtx = &avalanche.TestVertex{
 			TestDecidable: choices.TestDecidable{
 				IDV:     ids.GenerateTestID(),
@@ -3355,7 +3355,7 @@ func TestEngineDuplicatedIssuance(t *testing.T) {
 
 	sender.CantPushQuery = false
 
-	vm.PendingF = func() []snowstorm.Tx { return []snowstorm.Tx{tx} }
+	vm.PendingF = func() []conflicts.Tx { return []conflicts.Tx{tx} }
 	if err := te.Notify(common.PendingTxs); err != nil {
 		t.Fatal(err)
 	}
@@ -3364,7 +3364,7 @@ func TestEngineDuplicatedIssuance(t *testing.T) {
 		t.Fatalf("Should have issued txs differently")
 	}
 
-	manager.BuildF = func(uint32, []ids.ID, []snowstorm.Tx, []ids.ID) (avalanche.Vertex, error) {
+	manager.BuildF = func(uint32, []ids.ID, []conflicts.Tx, []ids.ID) (avalanche.Vertex, error) {
 		t.Fatalf("shouldn't have attempted to issue a duplicated tx")
 		return nil, nil
 	}
@@ -3417,7 +3417,7 @@ func TestEngineDoubleChit(t *testing.T) {
 	vts := []avalanche.Vertex{gVtx, mVtx}
 	utxos := []ids.ID{ids.GenerateTestID()}
 
-	tx := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+	tx := &conflicts.TestTx{TestDecidable: choices.TestDecidable{
 		IDV:     ids.GenerateTestID(),
 		StatusV: choices.Processing,
 	}}
@@ -3430,7 +3430,7 @@ func TestEngineDoubleChit(t *testing.T) {
 		},
 		ParentsV: vts,
 		HeightV:  1,
-		TxsV:     []snowstorm.Tx{tx},
+		TxsV:     []conflicts.Tx{tx},
 		BytesV:   []byte{1, 1, 2, 3},
 	}
 

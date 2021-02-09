@@ -6,7 +6,7 @@ package vertex
 import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/utils/hashing"
 )
 
@@ -16,7 +16,7 @@ type Builder interface {
 	Build(
 		epoch uint32,
 		parentIDs []ids.ID,
-		txs []snowstorm.Tx,
+		txs []conflicts.Tx,
 		restrictions []ids.ID,
 	) (avalanche.Vertex, error)
 }

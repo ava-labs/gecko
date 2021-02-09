@@ -1,7 +1,7 @@
 // (c) 2019-2020, Ava Labs, Inc. All rights reserved.
 // See the file LICENSE for licensing terms.
 
-package snowstorm
+package conflicts
 
 import (
 	"github.com/ava-labs/avalanchego/ids"
@@ -27,5 +27,5 @@ func (t *TestTx) InputIDs() []ids.ID { return t.InputIDsV }
 // Verify implements the Tx interface
 func (t *TestTx) Verify() error { return t.VerifyV }
 
-// Bytes returns the bits
+// Bytes implements the Tx interface
 func (t *TestTx) Bytes() []byte { return t.BytesV }

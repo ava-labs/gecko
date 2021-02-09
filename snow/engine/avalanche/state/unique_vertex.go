@@ -10,7 +10,7 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/hashing"
@@ -224,7 +224,7 @@ func (vtx *uniqueVertex) Epoch() (uint32, error) {
 	return vtx.v.vtx.Epoch(), nil
 }
 
-func (vtx *uniqueVertex) Txs() ([]snowstorm.Tx, error) {
+func (vtx *uniqueVertex) Txs() ([]conflicts.Tx, error) {
 	vtx.refresh()
 
 	if vtx.v.vtx == nil {
@@ -233,7 +233,7 @@ func (vtx *uniqueVertex) Txs() ([]snowstorm.Tx, error) {
 
 	txs := vtx.v.vtx.Txs()
 	if len(txs) != len(vtx.v.txs) {
-		vtx.v.txs = make([]snowstorm.Tx, len(txs))
+		vtx.v.txs = make([]conflicts.Tx, len(txs))
 		for i, txBytes := range txs {
 			tx, err := vtx.serializer.vm.Parse(txBytes)
 			if err != nil {
@@ -294,5 +294,5 @@ type vertexState struct {
 	status choices.Status
 
 	parents []avalanche.Vertex
-	txs     []snowstorm.Tx
+	txs     []conflicts.Tx
 }

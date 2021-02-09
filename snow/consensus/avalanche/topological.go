@@ -8,6 +8,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 )
 
 const (
@@ -78,7 +79,7 @@ func (ta *Topological) Initialize(
 	ta.nodes = make(map[ids.ID]Vertex, minMapSize)
 
 	ta.cg = &snowstorm.Directed{}
-	if err := ta.cg.Initialize(ctx, params.Parameters); err != nil {
+	if err := ta.cg.Initialize(ctx, conflicts.New(), params.Parameters); err != nil {
 		return err
 	}
 
@@ -93,7 +94,7 @@ func (ta *Topological) Initialize(
 func (ta *Topological) Parameters() Parameters { return ta.params }
 
 // IsVirtuous implements the Avalanche interface
-func (ta *Topological) IsVirtuous(tx snowstorm.Tx) bool { return ta.cg.IsVirtuous(tx) }
+func (ta *Topological) IsVirtuous(tx conflicts.Tx) (bool, error) { return ta.cg.IsVirtuous(tx) }
 
 // Add implements the Avalanche interface
 func (ta *Topological) Add(vtx Vertex) error {
@@ -137,7 +138,7 @@ func (ta *Topological) VertexIssued(vtx Vertex) bool {
 }
 
 // TxIssued implements the Avalanche interface
-func (ta *Topological) TxIssued(tx snowstorm.Tx) bool { return ta.cg.Issued(tx) }
+func (ta *Topological) TxIssued(tx conflicts.Tx) bool { return ta.cg.Issued(tx) }
 
 // Orphans implements the Avalanche interface
 func (ta *Topological) Orphans() ids.Set { return ta.orphans }
@@ -307,7 +308,10 @@ func (ta *Topological) pushVotes(
 
 				// Map txID to set of Conflicts
 				if _, exists := txConflicts[txID]; !exists {
-					txConflicts[txID] = ta.cg.Conflicts(tx)
+					txConflicts[txID], err = ta.cg.Conflicts(tx)
+					if err != nil {
+						return ids.Bag{}, err
+					}
 				}
 			}
 

@@ -15,7 +15,7 @@ import (
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
-	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm"
+	"github.com/ava-labs/avalanchego/snow/consensus/snowstorm/conflicts"
 	"github.com/ava-labs/avalanchego/snow/engine/avalanche/vertex"
 	"github.com/ava-labs/avalanchego/utils/math"
 )
@@ -66,7 +66,7 @@ func (s *Serializer) Parse(b []byte) (avalanche.Vertex, error) {
 func (s *Serializer) Build(
 	epoch uint32,
 	parentIDs []ids.ID,
-	txs []snowstorm.Tx,
+	txs []conflicts.Tx,
 	restrictions []ids.ID,
 ) (avalanche.Vertex, error) {
 	height := uint64(0)
