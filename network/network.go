@@ -152,15 +152,22 @@ type network struct {
 	apricotPhase0Time                  time.Time
 
 	// stateLock should never be held when grabbing a peer lock
-	stateLock       sync.RWMutex
-	pendingBytes    int64
-	closed          utils.AtomicBool
+	stateLock    sync.RWMutex
+	pendingBytes int64
+	// closed is true if the network has been closed
+	closed utils.AtomicBool
+
+	// Set of IPs the node is currently attempting to connect to.
+	// Removing the IP from this map will tell the goroutine
+	// attempting to connect to this IP that it should terminate.
 	disconnectedIPs map[string]struct{}
-	connectedIPs    map[string]struct{}
-	retryDelay      map[string]time.Duration
+	// Set of IPs that have completed handshake with the node
+	connectedIPs map[string]struct{}
+	// Current delay before the next retry connect attempt
+	retryDelay map[string]time.Duration
 	// TODO: bound the size of [myIPs] to avoid DoS. LRU caching would be ideal
-	myIPs map[string]struct{} // set of IPs that resulted in my ID.
-	peers map[ids.ShortID]*peer
+	myIPs map[string]struct{}   // set of IPs that resulted in my ID.
+	peers map[ids.ShortID]*peer // map of validatorIDs to the corresponding peers
 
 	// ensures the close of the network only happens once.
 	closeOnce sync.Once
@@ -942,23 +949,47 @@ func (n *network) gossipContainer(chainID, containerID ids.ID, container []byte)
 
 // assumes the stateLock is held.
 func (n *network) track(ip utils.IPDesc) {
-	if n.closed.GetValue() {
-		return
-	}
-
 	str := ip.String()
-	if _, ok := n.disconnectedIPs[str]; ok {
+	if !n.shouldTrack(str) {
 		return
 	}
-	if _, ok := n.connectedIPs[str]; ok {
-		return
-	}
-	if _, ok := n.myIPs[str]; ok {
-		return
-	}
-	n.disconnectedIPs[str] = struct{}{}
 
+	// Add [str] to disconnectedIPs to signal to the new goroutine
+	// not to terminate.
+	n.disconnectedIPs[str] = struct{}{}
 	go n.connectTo(ip)
+}
+
+// assumes the stateLock is held
+// return true if [ip] should be tracked
+func (n *network) shouldTrack(str string) bool {
+	// If [str] is already being tracked, do not attempt to track it
+	_, isDisconnected := n.disconnectedIPs[str]
+	// If the network is already connected to [str], do not attempt to track it
+	_, isConnected := n.connectedIPs[str]
+	// If [str] is registered as one of my IPs, do not attempt to track it
+	_, isMyself := n.myIPs[str]
+	// If the network is closed, do not attempt to track any new IPs
+	closed := n.closed.GetValue()
+
+	return !closed && !isDisconnected && !isConnected && !isMyself
+}
+
+// assumes the stateLock is held.
+func (n *network) connectOnce(ip utils.IPDesc) {
+	str := ip.String()
+	if !n.shouldTrack(str) {
+		return
+	}
+
+	go func() {
+		err := n.attemptConnect(ip)
+		if err == nil {
+			return
+		}
+		n.log.Verbo("error attempting to connect to %s for the first time: %s",
+			ip, err)
+	}()
 }
 
 // assumes the stateLock is not held. Only returns after the network is closed.
@@ -1081,27 +1112,11 @@ func (n *network) connectTo(ip utils.IPDesc) {
 			delay = time.Duration(float64(n.maxReconnectDelay) * (3 + rand.Float64()) / 4) // #nosec G404
 		}
 
-		n.stateLock.Lock()
-		_, isDisconnected := n.disconnectedIPs[str]
-		_, isConnected := n.connectedIPs[str]
-		_, isMyself := n.myIPs[str]
-		closed := n.closed
-
-		if !isDisconnected || isConnected || isMyself || closed.GetValue() {
-			// If the IP was discovered by the peer connecting to us, we don't
-			// need to attempt to connect anymore
-
-			// If the IP was discovered to be our IP address, we don't need to
-			// attempt to connect anymore
-
-			// If the network was closed, we should stop attempting to connect
-			// to the peer
-
-			n.stateLock.Unlock()
+		shouldConnect := n.shouldConnect(str)
+		if !shouldConnect {
 			return
 		}
 		n.retryDelay[str] = delay
-		n.stateLock.Unlock()
 
 		err := n.attemptConnect(ip)
 		if err == nil {
@@ -1110,6 +1125,26 @@ func (n *network) connectTo(ip utils.IPDesc) {
 		n.log.Verbo("error attempting to connect to %s: %s. Reattempting in %s",
 			ip, err, delay)
 	}
+}
+
+// assumes the stateLock is not held
+// returns true if the network should keep trying to connect to the IP
+// represented by [str]
+func (n *network) shouldConnect(str string) bool {
+	n.stateLock.RLock()
+	defer n.stateLock.RUnlock()
+
+	// If [str] is not in [disconnectedIPs] do not attempt to connect
+	// because we have already created a connection to [str].
+	_, isDisconnected := n.disconnectedIPs[str]
+	// If [str] is in [connectedIPs] do not attempt to connect
+	// because we are already connected to [str].
+	_, isConnected := n.connectedIPs[str]
+	// If [str] is one of my IPs, do not attempt to create a connection
+	// to myself.
+	_, isMyself := n.myIPs[str]
+
+	return isDisconnected && !isConnected && !isMyself && !n.closed.GetValue()
 }
 
 // assumes the stateLock is not held. Returns nil if a connection was able to be
@@ -1195,6 +1230,8 @@ func (n *network) tryAddPeer(p *peer) error {
 				n.ip.Update(p.ip)
 			}
 			str := ip.String()
+			// Remove [str] from disconnectedIPs and [retryDelay] to prevent future
+			// reconnect attempts to myself at [str].
 			delete(n.disconnectedIPs, str)
 			delete(n.retryDelay, str)
 			n.myIPs[str] = struct{}{}
@@ -1207,6 +1244,9 @@ func (n *network) tryAddPeer(p *peer) error {
 	if _, ok := n.peers[p.id]; ok {
 		if !ip.IsZero() {
 			str := ip.String()
+			// If I already have a connection to this peer, remove [str] from
+			// [disconnectedIPs and [retryDelay] to stop attempting to create
+			// a duplicate connection.
 			delete(n.disconnectedIPs, str)
 			delete(n.retryDelay, str)
 		}
@@ -1274,6 +1314,8 @@ func (n *network) connected(p *peer) {
 	if !ip.IsZero() {
 		str := ip.String()
 
+		// Remove [str] from [disconnectedIPs] and [retryDelay] to terminate
+		// any goroutines attempting to connect to [ip]
 		delete(n.disconnectedIPs, str)
 		delete(n.retryDelay, str)
 		n.connectedIPs[str] = struct{}{}
@@ -1298,12 +1340,20 @@ func (n *network) disconnected(p *peer) {
 	if !ip.IsZero() {
 		str := ip.String()
 
+		// Remove [str] from [disconnectedIPs] and [connectedIPs]
+		// before calling track on [ip].
 		delete(n.disconnectedIPs, str)
 		delete(n.connectedIPs, str)
 
-		n.track(ip)
+		// If this peer was a validator, call track to attempt to
+		// reconnect with an exponential backoff.
+		if n.vdrs.Contains(p.id) {
+			n.track(ip)
+		}
 	}
 
+	// If [p] was marked as connected, pass the Disconnected message
+	// to the router.
 	if p.connected.GetValue() {
 		n.router.Disconnected(p.id)
 	}

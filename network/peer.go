@@ -592,8 +592,7 @@ func (p *peer) peerList(msg Msg) {
 		if !ip.Equal(p.net.ip.IP()) &&
 			!ip.IsZero() &&
 			(p.net.allowPrivateIPs || !ip.IsPrivate()) {
-			// TODO: only try to connect once
-			p.net.track(ip)
+			p.net.connectOnce(ip)
 		}
 		p.net.stateLock.Unlock()
 	}
