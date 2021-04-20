@@ -12,6 +12,8 @@ import (
 	"github.com/ava-labs/avalanchego/snow/validators"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/uptime"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAddPending(t *testing.T) {
@@ -29,7 +31,7 @@ func TestAddPending(t *testing.T) {
 	if err := vdrs.Set(vdrList); err != nil {
 		t.Fatal(err)
 	}
-	resourceManager := NewMsgManager(
+	resourceManager, err := NewMsgManager(
 		vdrs,
 		logging.NoLog{},
 		msgTracker,
@@ -38,7 +40,10 @@ func TestAddPending(t *testing.T) {
 		1,   // Allow each peer to take at most one message from pool
 		0.5, // Allot half of message queue to stakers
 		0.5, // Allot half of CPU time to stakers
+		"",
+		prometheus.NewRegistry(),
 	)
+	assert.NoError(t, err)
 
 	for i, vdr := range vdrList {
 		if success := resourceManager.AddPending(vdr.ID()); !success {
@@ -75,7 +80,7 @@ func TestStakerGetsThrottled(t *testing.T) {
 	if err := vdrs.Set(vdrList); err != nil {
 		t.Fatal(err)
 	}
-	resourceManager := NewMsgManager(
+	resourceManager, err := NewMsgManager(
 		vdrs,
 		logging.NoLog{},
 		msgTracker,
@@ -84,7 +89,10 @@ func TestStakerGetsThrottled(t *testing.T) {
 		1,   // Allow each peer to take at most one message from pool
 		0.5, // Allot half of message queue to stakers
 		0.5, // Allot half of CPU time to stakers
+		"",
+		prometheus.NewRegistry(),
 	)
+	assert.NoError(t, err)
 
 	// Ensure that a staker with only part of the stake
 	// cannot take up the entire message queue

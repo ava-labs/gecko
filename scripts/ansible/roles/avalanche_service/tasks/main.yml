@@ -2,7 +2,7 @@
   become: true
   template:
     src: avalanche.service
-    dest: /etc/systemd/system
+    dest: "/etc/systemd/system/{{ avalanche_daemon_service_name }}.service"
     owner: root
     group: root
     mode: u=rw,go=r
@@ -13,7 +13,7 @@
 - name: Enable Avalanche service
   become: true
   systemd:
-    name: avalanche
+    name: "{{ avalanche_daemon_service_name }}"
     state: started
     enabled: true
     daemon_reload: true

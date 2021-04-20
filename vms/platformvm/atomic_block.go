@@ -61,6 +61,13 @@ func (ab *AtomicBlock) conflicts(s ids.Set) bool {
 //
 // This function also sets onAcceptDB database if the verification passes.
 func (ab *AtomicBlock) Verify() error {
+	if err := ab.CommonDecisionBlock.Verify(); err != nil {
+		if err := ab.Reject(); err != nil {
+			ab.vm.Ctx.Log.Error("failed to reject atomic block %s due to %s", ab.ID(), err)
+		}
+		return err
+	}
+
 	tx, ok := ab.Tx.UnsignedTx.(UnsignedAtomicTx)
 	if !ok {
 		return errWrongTxType
@@ -100,7 +107,7 @@ func (ab *AtomicBlock) Verify() error {
 
 // Accept implements the snowman.Block interface
 func (ab *AtomicBlock) Accept() error {
-	ab.vm.Ctx.Log.Verbo("Accepting block with ID %s", ab.ID())
+	ab.vm.Ctx.Log.Verbo("Accepting Atomic Block %s at height %d with parent %s", ab.ID(), ab.Height(), ab.ParentID())
 
 	tx, ok := ab.Tx.UnsignedTx.(UnsignedAtomicTx)
 	if !ok {
@@ -141,6 +148,8 @@ func (ab *AtomicBlock) Accept() error {
 
 // Reject implements the snowman.Block interface
 func (ab *AtomicBlock) Reject() error {
+	ab.vm.Ctx.Log.Verbo("Rejecting Atomic Block %s at height %d with parent %s", ab.ID(), ab.Height(), ab.ParentID())
+
 	if err := ab.vm.mempool.IssueTx(&ab.Tx); err != nil {
 		ab.vm.Ctx.Log.Debug("failed to reissue tx %q due to: %s", ab.Tx.ID(), err)
 	}

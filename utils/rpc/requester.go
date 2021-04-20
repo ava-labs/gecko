@@ -49,15 +49,19 @@ func (requester jsonRPCRequester) SendJSONRPCRequest(endpoint string, method str
 	if err != nil {
 		return fmt.Errorf("problem while making JSON RPC POST request to %s: %s", url, err)
 	}
-	defer resp.Body.Close()
 	statusCode := resp.StatusCode
 
 	// Return an error for any non successful status code
 	if statusCode < 200 || statusCode > 299 {
+		// Drop any error during close to report the original error
+		_ = resp.Body.Close()
 		return fmt.Errorf("received status code '%v'", statusCode)
 	}
 
-	return rpc.DecodeClientResponse(resp.Body, reply)
+	if err := rpc.DecodeClientResponse(resp.Body, reply); err != nil {
+		return err
+	}
+	return resp.Body.Close()
 }
 
 // EndpointRequester ...

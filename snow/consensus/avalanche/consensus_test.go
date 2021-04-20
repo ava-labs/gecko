@@ -23,6 +23,7 @@ var (
 	Tests = []func(*testing.T, Factory){
 		MetricsTest,
 		ParamsTest,
+		NumProcessingTest,
 		AddTest,
 		VertexIssuedTest,
 		TxIssuedTest,
@@ -65,6 +66,7 @@ func MetricsTest(t *testing.T, factory Factory) {
 				BetaVirtuous:      1,
 				BetaRogue:         2,
 				ConcurrentRepolls: 1,
+				OptimalProcessing: 1,
 			},
 			Parents:   2,
 			BatchSize: 1,
@@ -84,12 +86,14 @@ func MetricsTest(t *testing.T, factory Factory) {
 		avl := factory.New()
 		params := Parameters{
 			Parameters: snowball.Parameters{
-				Namespace:    fmt.Sprintf("%s_%s", constants.PlatformName, ctx.ChainID),
-				Metrics:      prometheus.NewRegistry(),
-				K:            2,
-				Alpha:        2,
-				BetaVirtuous: 1,
-				BetaRogue:    2,
+				Namespace:         fmt.Sprintf("%s_%s", constants.PlatformName, ctx.ChainID),
+				Metrics:           prometheus.NewRegistry(),
+				K:                 2,
+				Alpha:             2,
+				BetaVirtuous:      1,
+				BetaRogue:         2,
+				ConcurrentRepolls: 1,
+				OptimalProcessing: 1,
 			},
 			Parents:   2,
 			BatchSize: 1,
@@ -109,12 +113,14 @@ func MetricsTest(t *testing.T, factory Factory) {
 		avl := factory.New()
 		params := Parameters{
 			Parameters: snowball.Parameters{
-				Namespace:    fmt.Sprintf("%s_%s", constants.PlatformName, ctx.ChainID),
-				Metrics:      prometheus.NewRegistry(),
-				K:            2,
-				Alpha:        2,
-				BetaVirtuous: 1,
-				BetaRogue:    2,
+				Namespace:         fmt.Sprintf("%s_%s", constants.PlatformName, ctx.ChainID),
+				Metrics:           prometheus.NewRegistry(),
+				K:                 2,
+				Alpha:             2,
+				BetaVirtuous:      1,
+				BetaRogue:         2,
+				ConcurrentRepolls: 1,
+				OptimalProcessing: 1,
 			},
 			Parents:   2,
 			BatchSize: 1,
@@ -138,13 +144,16 @@ func ParamsTest(t *testing.T, factory Factory) {
 	ctx := snow.DefaultContextTest()
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Namespace:         fmt.Sprintf("%s_%s", constants.PlatformName, ctx.ChainID),
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Namespace:             fmt.Sprintf("%s_%s", constants.PlatformName, ctx.ChainID),
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -169,17 +178,133 @@ func ParamsTest(t *testing.T, factory Factory) {
 	}
 }
 
+func NumProcessingTest(t *testing.T, factory Factory) {
+	avl := factory.New()
+
+	params := Parameters{
+		Parameters: snowball.Parameters{
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
+		},
+		Parents:   2,
+		BatchSize: 1,
+	}
+	vts := []Vertex{
+		&TestVertex{TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Accepted,
+		}},
+		&TestVertex{TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Accepted,
+		}},
+	}
+	utxos := []ids.ID{ids.GenerateTestID()}
+
+	if err := avl.Initialize(snow.DefaultContextTest(), params, vts); err != nil {
+		t.Fatal(err)
+	}
+
+	if numProcessing := avl.NumProcessing(); numProcessing != 0 {
+		t.Fatalf("expected %d vertices processing but returned %d", 0, numProcessing)
+	}
+
+	tx0 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Processing,
+	}}
+	tx0.InputIDsV = append(tx0.InputIDsV, utxos[0])
+
+	vtx0 := &TestVertex{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentsV: vts,
+		HeightV:  1,
+		TxsV:     []snowstorm.Tx{tx0},
+	}
+
+	if err := avl.Add(vtx0); err != nil {
+		t.Fatal(err)
+	}
+
+	if numProcessing := avl.NumProcessing(); numProcessing != 1 {
+		t.Fatalf("expected %d vertices processing but returned %d", 1, numProcessing)
+	}
+
+	tx1 := &snowstorm.TestTx{TestDecidable: choices.TestDecidable{
+		IDV:     ids.GenerateTestID(),
+		StatusV: choices.Processing,
+	}}
+	tx1.InputIDsV = append(tx1.InputIDsV, utxos[0])
+
+	vtx1 := &TestVertex{
+		TestDecidable: choices.TestDecidable{
+			IDV:     ids.GenerateTestID(),
+			StatusV: choices.Processing,
+		},
+		ParentsV: vts,
+		HeightV:  1,
+		TxsV:     []snowstorm.Tx{tx1},
+	}
+
+	if err := avl.Add(vtx1); err != nil {
+		t.Fatal(err)
+	}
+
+	if numProcessing := avl.NumProcessing(); numProcessing != 2 {
+		t.Fatalf("expected %d vertices processing but returned %d", 2, numProcessing)
+	}
+
+	if err := avl.Add(vtx1); err != nil {
+		t.Fatal(err)
+	}
+
+	if numProcessing := avl.NumProcessing(); numProcessing != 2 {
+		t.Fatalf("expected %d vertices processing but returned %d", 2, numProcessing)
+	}
+
+	if err := avl.Add(vts[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	if numProcessing := avl.NumProcessing(); numProcessing != 2 {
+		t.Fatalf("expected %d vertices processing but returned %d", 2, numProcessing)
+	}
+
+	votes := ids.UniqueBag{}
+	votes.Add(0, vtx0.ID())
+	if err := avl.RecordPoll(votes); err != nil {
+		t.Fatal(err)
+	}
+
+	if numProcessing := avl.NumProcessing(); numProcessing != 0 {
+		t.Fatalf("expected %d vertices processing but returned %d", 0, numProcessing)
+	}
+}
+
 func AddTest(t *testing.T, factory Factory) {
 	avl := factory.New()
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -284,12 +409,15 @@ func VertexIssuedTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -344,12 +472,15 @@ func TxIssuedTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -405,12 +536,15 @@ func VirtuousTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      10,
-			BetaRogue:         20,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          10,
+			BetaRogue:             20,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -556,12 +690,15 @@ func VirtuousSkippedUpdateTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      10,
-			BetaRogue:         20,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          10,
+			BetaRogue:             20,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -654,12 +791,15 @@ func VotingTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -753,12 +893,15 @@ func IgnoreInvalidVotingTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 3,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     3,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -838,12 +981,15 @@ func TransitiveVotingTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -955,12 +1101,15 @@ func SplitVotingTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1036,12 +1185,15 @@ func TransitiveRejectionTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1171,12 +1323,15 @@ func IsVirtuousTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 2,
-			Alpha:             2,
-			BetaVirtuous:      1,
-			BetaRogue:         2,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     2,
+			Alpha:                 2,
+			BetaVirtuous:          1,
+			BetaRogue:             2,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1272,12 +1427,15 @@ func QuiesceTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1375,12 +1533,15 @@ func OrphansTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      math.MaxInt32,
-			BetaRogue:         math.MaxInt32,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          math.MaxInt32,
+			BetaRogue:             math.MaxInt32,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1480,12 +1641,15 @@ func ErrorOnVacuousAcceptTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      math.MaxInt32,
-			BetaRogue:         math.MaxInt32,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          math.MaxInt32,
+			BetaRogue:             math.MaxInt32,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1526,12 +1690,15 @@ func ErrorOnTxAcceptTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1580,12 +1747,15 @@ func ErrorOnVtxAcceptTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1634,12 +1804,15 @@ func ErrorOnVtxRejectTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1706,12 +1879,15 @@ func ErrorOnParentVtxRejectTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,
@@ -1790,12 +1966,15 @@ func ErrorOnTransitiveVtxRejectTest(t *testing.T, factory Factory) {
 
 	params := Parameters{
 		Parameters: snowball.Parameters{
-			Metrics:           prometheus.NewRegistry(),
-			K:                 1,
-			Alpha:             1,
-			BetaVirtuous:      1,
-			BetaRogue:         1,
-			ConcurrentRepolls: 1,
+			Metrics:               prometheus.NewRegistry(),
+			K:                     1,
+			Alpha:                 1,
+			BetaVirtuous:          1,
+			BetaRogue:             1,
+			ConcurrentRepolls:     1,
+			OptimalProcessing:     1,
+			MaxOutstandingItems:   1,
+			MaxItemProcessingTime: 1,
 		},
 		Parents:   2,
 		BatchSize: 1,

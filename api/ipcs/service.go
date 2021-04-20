@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/rpc/v2"
 
 	"github.com/ava-labs/avalanchego/api"
+	"github.com/ava-labs/avalanchego/api/server"
 	"github.com/ava-labs/avalanchego/chains"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/ipcs"
@@ -20,14 +21,14 @@ import (
 
 // IPCServer maintains the IPCs
 type IPCServer struct {
-	httpServer   *api.Server
+	httpServer   *server.Server
 	chainManager chains.Manager
 	log          logging.Logger
 	ipcs         *ipcs.ChainIPCs
 }
 
 // NewService returns a new IPCs API service
-func NewService(log logging.Logger, chainManager chains.Manager, httpServer *api.Server, ipcs *ipcs.ChainIPCs) (*common.HTTPHandler, error) {
+func NewService(log logging.Logger, chainManager chains.Manager, httpServer *server.Server, ipcs *ipcs.ChainIPCs) (*common.HTTPHandler, error) {
 	ipcServer := &IPCServer{
 		log:          log,
 		chainManager: chainManager,

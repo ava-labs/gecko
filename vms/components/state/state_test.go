@@ -102,7 +102,6 @@ func TestPutUnregistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	// make an account
 	acc1 := &account{
@@ -124,6 +123,10 @@ func TestPutUnregistered(t *testing.T) {
 	if err := state.Put(db, 1, ids.ID{1, 2, 3}, acc1); err != nil {
 		t.Fatal(err)
 	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Ensure there is an error if someone tries to get the value associated with a
@@ -135,7 +138,6 @@ func TestKeyDoesNotExist(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	if _, err := state.Get(db, 1, ids.ID{1, 2, 3}); err == nil {
 		t.Fatal("should have failed because no such key or typeID exists")
@@ -151,6 +153,10 @@ func TestKeyDoesNotExist(t *testing.T) {
 	if _, err := state.Get(db, typeID, ids.ID{1, 2, 3}); err == nil {
 		t.Fatal("should have failed because no such key exists")
 	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Ensure there is an error if someone tries to register a type ID that already exists
@@ -161,7 +167,6 @@ func TestRegisterExistingTypeID(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	// register type with ID 1
 	typeID := uint64(1)
@@ -174,6 +179,9 @@ func TestRegisterExistingTypeID(t *testing.T) {
 		t.Fatal("Should have errored because typeID already registered")
 	}
 
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Ensure there is an error when someone tries to get a value using the wrong typeID
@@ -184,7 +192,6 @@ func TestGetWrongTypeID(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	// register type with ID 1
 	blockTypeID := uint64(1)
@@ -206,6 +213,10 @@ func TestGetWrongTypeID(t *testing.T) {
 	if _, err := state.Get(db, 2, blockID); err == nil {
 		t.Fatal("should have failed because type ID is wrong")
 	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Ensure that there is no error when someone puts two values with the same
@@ -217,7 +228,6 @@ func TestSameKeyDifferentTypeID(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	// register block type with ID 1
 	blockTypeID := uint64(1)
@@ -288,6 +298,10 @@ func TestSameKeyDifferentTypeID(t *testing.T) {
 	case blockFromState.value != block1.value:
 		t.Fatal("values should be same")
 	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Ensure that overwriting a value works
@@ -298,7 +312,6 @@ func TestOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	// register block type with ID 1
 	blockTypeID := uint64(1)
@@ -346,6 +359,10 @@ func TestOverwrite(t *testing.T) {
 	case blockFromState.value != block2.value:
 		t.Fatal("values should be same")
 	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Put 4 values, 2 of one type and 2 of another
@@ -356,7 +373,6 @@ func TestHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := memdb.New()
-	defer db.Close()
 
 	accountTypeID := uint64(1)
 
@@ -485,5 +501,9 @@ func TestHappyPath(t *testing.T) {
 		t.Fatal("parentIDs should be same")
 	case block2FromState.value != block2.value:
 		t.Fatal("values should be same")
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

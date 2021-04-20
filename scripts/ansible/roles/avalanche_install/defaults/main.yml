@@ -13,10 +13,11 @@ logdir: "{{ localstatedir }}/log"
 
 # These names are specific to Avalanche. Default values are based loosely on *nix
 # conventions.
-avalanche_daemon_home_dir: "{{ sharedstatedir }}/avalanche"
+avalanche_daemon_home_dir: "{{ sharedstatedir }}/avalanchego"
 avalanche_daemon_db_dir: "{{ avalanche_daemon_home_dir }}/db"
-avalanche_daemon_log_dir: "{{ logdir }}/avalanche"
-avalanche_daemon_plugin_dir: "{{ libdir }}/avalanche/plugins"
+avalanche_daemon_log_dir: "{{ logdir }}/avalanchego"
+avalanche_daemon_plugin_dir: "{{ libdir }}/avalanchego"
 avalanche_daemon_staking_dir: "{{ avalanche_daemon_home_dir }}/staking"
 avalanche_daemon_staking_tls_cert: "{{ avalanche_daemon_staking_dir }}/staker.crt"
+avalanche_daemon_staking_tls_csr: "{{ avalanche_daemon_staking_dir }}/staker.csr"
 avalanche_daemon_staking_tls_key: "{{ avalanche_daemon_staking_dir }}/staker.key"

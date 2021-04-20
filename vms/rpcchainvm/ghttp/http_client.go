@@ -18,13 +18,18 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/grpcutils"
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+var (
+	_ http.Handler = &Client{}
+)
+
+// Client is an http.Handler that talks over RPC.
 type Client struct {
 	client ghttpproto.HTTPClient
 	broker *plugin.GRPCBroker
 }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns an HTTP handler database instance connected to a remote
+// HTTP handler instance
 func NewClient(client ghttpproto.HTTPClient, broker *plugin.GRPCBroker) *Client {
 	return &Client{
 		client: client,
@@ -32,7 +37,6 @@ func NewClient(client ghttpproto.HTTPClient, broker *plugin.GRPCBroker) *Client 
 	}
 }
 
-// Handle ...
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	closer := grpcutils.ServerCloser{}
 	defer closer.GracefulStop()

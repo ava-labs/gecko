@@ -6,19 +6,23 @@ package greadcloser
 import (
 	"context"
 	"errors"
+	"io"
 
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/greadcloser/greadcloserproto"
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+var (
+	_ io.ReadCloser = &Client{}
+)
+
+// Client is a read closer that talks over RPC.
 type Client struct{ client greadcloserproto.ReaderClient }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns a read closer connected to a remote read closer
 func NewClient(client greadcloserproto.ReaderClient) *Client {
 	return &Client{client: client}
 }
 
-// Read ...
 func (c *Client) Read(p []byte) (int, error) {
 	resp, err := c.client.Read(context.Background(), &greadcloserproto.ReadRequest{
 		Length: int32(len(p)),
@@ -35,7 +39,6 @@ func (c *Client) Read(p []byte) (int, error) {
 	return len(resp.Read), err
 }
 
-// Close ...
 func (c *Client) Close() error {
 	_, err := c.client.Close(context.Background(), &greadcloserproto.CloseRequest{})
 	return err

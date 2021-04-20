@@ -11,8 +11,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/ava-labs/avalanchego/api/keystore"
 	"github.com/ava-labs/avalanchego/chains/atomic"
-	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/timer"
@@ -20,14 +20,12 @@ import (
 
 // EventDispatcher ...
 type EventDispatcher interface {
-	Issue(ctx *Context, containerID ids.ID, container []byte)
-	Accept(ctx *Context, containerID ids.ID, container []byte)
-	Reject(ctx *Context, containerID ids.ID, container []byte)
-}
-
-// Keystore ...
-type Keystore interface {
-	GetDatabase(username, password string) (database.Database, error)
+	Issue(ctx *Context, containerID ids.ID, container []byte) error
+	// If the returned error is non-nil, the chain associated with [ctx] should shut
+	// down and not commit [container] or any other container to its database as accepted.
+	// Accept must be called before [containerID] is committed to the VM as accepted.
+	Accept(ctx *Context, containerID ids.ID, container []byte) error
+	Reject(ctx *Context, containerID ids.ID, container []byte) error
 }
 
 // AliasLookup ...
@@ -58,7 +56,7 @@ type Context struct {
 	DecisionDispatcher  EventDispatcher
 	ConsensusDispatcher EventDispatcher
 	Lock                sync.RWMutex
-	Keystore            Keystore
+	Keystore            keystore.BlockchainKeystore
 	SharedMemory        atomic.SharedMemory
 	BCLookup            AliasLookup
 	SNLookup            SubnetLookup
@@ -116,6 +114,6 @@ func DefaultContextTest() *Context {
 
 type emptyEventDispatcher struct{}
 
-func (emptyEventDispatcher) Issue(*Context, ids.ID, []byte)  {}
-func (emptyEventDispatcher) Accept(*Context, ids.ID, []byte) {}
-func (emptyEventDispatcher) Reject(*Context, ids.ID, []byte) {}
+func (emptyEventDispatcher) Issue(*Context, ids.ID, []byte) error  { return nil }
+func (emptyEventDispatcher) Accept(*Context, ids.ID, []byte) error { return nil }
+func (emptyEventDispatcher) Reject(*Context, ids.ID, []byte) error { return nil }

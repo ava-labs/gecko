@@ -79,62 +79,37 @@ func (r *OpenDNSResolver) Resolve() (net.IP, error) {
 	return net.ParseIP(ip[0]), nil
 }
 
-// IFConfigResolves resolves our public IP using website ifconfig.co
-type IFConfigResolver struct{}
+// IFConfigResolves resolves our public IP using ifconfig's format
+type IFConfigResolver struct {
+	url string
+}
 
 func (r *IFConfigResolver) IsResolver() bool {
 	return true
 }
 
 func (r *IFConfigResolver) Resolve() (net.IP, error) {
-	url := "http://ifconfig.co"
-	resp, err := http.Get(url)
+	resp, err := http.Get(r.url)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 	ip, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response from ifconfig: %w", err)
+		// Drop any error to report the original error
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("failed to read response from %q: %w", r.url, err)
 	}
-	ipstr := string(ip)
-	ipstr = strings.ReplaceAll(ipstr, "\r\n", "")
-	ipstr = strings.ReplaceAll(ipstr, "\r", "")
-	ipstr = strings.ReplaceAll(ipstr, "\n", "")
-	ipResolved := net.ParseIP(ipstr)
+	ipStr := string(ip)
+	ipStr = strings.ReplaceAll(ipStr, "\r\n", "")
+	ipStr = strings.ReplaceAll(ipStr, "\r", "")
+	ipStr = strings.ReplaceAll(ipStr, "\n", "")
+	ipResolved := net.ParseIP(ipStr)
 	if ipResolved == nil {
-		return nil, fmt.Errorf("invalid ip %s", ipstr)
+		// Drop any error to report the original error
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("invalid ip %s", ipStr)
 	}
-	return ipResolved, nil
-}
-
-// IFConfigMeResolves resolves our public IP using website ifconfig.me
-type IFConfigMeResolver struct{}
-
-func (r *IFConfigMeResolver) IsResolver() bool {
-	return true
-}
-
-func (r *IFConfigMeResolver) Resolve() (net.IP, error) {
-	url := "http://ifconfig.me"
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	ip, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response from ifconfig.me: %w", err)
-	}
-	ipstr := string(ip)
-	ipstr = strings.ReplaceAll(ipstr, "\r\n", "")
-	ipstr = strings.ReplaceAll(ipstr, "\r", "")
-	ipstr = strings.ReplaceAll(ipstr, "\n", "")
-	ipResolved := net.ParseIP(ipstr)
-	if ipResolved == nil {
-		return nil, fmt.Errorf("invalid ip %s", ipstr)
-	}
-	return ipResolved, nil
+	return ipResolved, resp.Body.Close()
 }
 
 func NewResolver(opt string) Resolver {
@@ -142,11 +117,11 @@ func NewResolver(opt string) Resolver {
 	case "opendns":
 		return NewOpenDNSResolver()
 	case "ifconfig":
-		return &IFConfigResolver{}
+		return &IFConfigResolver{url: "http://ifconfig.co"}
 	case "ifconfigco":
-		return &IFConfigResolver{}
+		return &IFConfigResolver{url: "http://ifconfig.co"}
 	case "ifconfigme":
-		return &IFConfigMeResolver{}
+		return &IFConfigResolver{url: "http://ifconfig.me"}
 	default:
 		return &NoResolver{}
 	}

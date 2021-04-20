@@ -11,5 +11,4 @@
     group: "{{ avalanche_daemon_group }}"
     home: "{{ avalanche_daemon_home_dir }}"
     shell: /bin/false
-    skeleton: false
     system: true

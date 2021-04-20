@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/networking/tracker"
@@ -19,7 +20,7 @@ import (
 
 // returns a new multi-level queue that will never throttle or prioritize
 func setupMultiLevelQueue(t *testing.T, bufferSize uint32) (messageQueue, chan struct{}) {
-	metrics := &metrics{}
+	metrics := &handlerMetrics{}
 	if err := metrics.Initialize("", prometheus.NewRegistry()); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestMultiLevelQueuePrioritizes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	metrics := &metrics{}
+	metrics := &handlerMetrics{}
 	if err := metrics.Initialize("", prometheus.NewRegistry()); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestMultiLevelQueuePrioritizes(t *testing.T) {
 
 	cpuTracker := tracker.NewCPUTracker(uptime.IntervalFactory{}, time.Second)
 	msgTracker := tracker.NewMessageTracker()
-	resourceManager := NewMsgManager(
+	resourceManager, err := NewMsgManager(
 		vdrs,
 		logging.NoLog{},
 		msgTracker,
@@ -168,7 +169,11 @@ func TestMultiLevelQueuePrioritizes(t *testing.T) {
 		DefaultMaxNonStakerPendingMsgs,
 		DefaultStakerPortion,
 		DefaultStakerPortion,
+		"",
+		prometheus.NewRegistry(),
 	)
+	assert.NoError(t, err)
+
 	queue, semaChan := newMultiLevelQueue(
 		resourceManager,
 		consumptionRanges,
@@ -247,7 +252,7 @@ func TestMultiLevelQueuePushesDownOldMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	metrics := &metrics{}
+	metrics := &handlerMetrics{}
 	if err := metrics.Initialize("", prometheus.NewRegistry()); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +277,7 @@ func TestMultiLevelQueuePushesDownOldMessages(t *testing.T) {
 
 	cpuTracker := tracker.NewCPUTracker(uptime.IntervalFactory{}, time.Second)
 	msgTracker := tracker.NewMessageTracker()
-	resourceManager := NewMsgManager(
+	resourceManager, err := NewMsgManager(
 		vdrs,
 		logging.NoLog{},
 		msgTracker,
@@ -281,7 +286,11 @@ func TestMultiLevelQueuePushesDownOldMessages(t *testing.T) {
 		DefaultMaxNonStakerPendingMsgs,
 		DefaultStakerPortion,
 		DefaultStakerPortion,
+		"",
+		prometheus.NewRegistry(),
 	)
+	assert.NoError(t, err)
+
 	queue, semaChan := newMultiLevelQueue(
 		resourceManager,
 		consumptionRanges,
@@ -347,7 +356,7 @@ func TestMultiLevelQueueFreesSpace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	metrics := &metrics{}
+	metrics := &handlerMetrics{}
 	if err := metrics.Initialize("", prometheus.NewRegistry()); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +384,7 @@ func TestMultiLevelQueueFreesSpace(t *testing.T) {
 
 	cpuTracker := tracker.NewCPUTracker(uptime.IntervalFactory{}, time.Second)
 	msgTracker := tracker.NewMessageTracker()
-	resourceManager := NewMsgManager(
+	resourceManager, err := NewMsgManager(
 		vdrs,
 		logging.NoLog{},
 		msgTracker,
@@ -384,7 +393,11 @@ func TestMultiLevelQueueFreesSpace(t *testing.T) {
 		DefaultMaxNonStakerPendingMsgs,
 		DefaultStakerPortion,
 		DefaultStakerPortion,
+		"",
+		prometheus.NewRegistry(),
 	)
+	assert.NoError(t, err)
+
 	queue, semaChan := newMultiLevelQueue(
 		resourceManager,
 		consumptionRanges,
@@ -445,7 +458,7 @@ func TestMultiLevelQueueThrottles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	metrics := &metrics{}
+	metrics := &handlerMetrics{}
 	if err := metrics.Initialize("", prometheus.NewRegistry()); err != nil {
 		t.Fatal(err)
 	}

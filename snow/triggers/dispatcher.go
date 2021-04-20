@@ -12,23 +12,36 @@ import (
 	"github.com/ava-labs/avalanchego/utils/logging"
 )
 
+var _ snow.EventDispatcher = &EventDispatcher{}
+
+type handler struct {
+	// Must implement at least one of Acceptor, Rejector, Issuer
+	handlerFunc interface{}
+	// If true and [handlerFunc] returns an error during a call to Accept,
+	// the chain this handler corresponds to will stop.
+	dieOnError bool
+}
+
 // EventDispatcher receives events from consensus and dispatches the events to triggers
 type EventDispatcher struct {
-	lock          sync.Mutex
-	log           logging.Logger
-	chainHandlers map[ids.ID]map[string]interface{}
+	lock sync.Mutex
+	log  logging.Logger
+	// Chain ID --> Identifier --> handler
+	chainHandlers map[ids.ID]map[string]handler
 	handlers      map[string]interface{}
 }
 
 // Initialize creates the EventDispatcher's initial values
 func (ed *EventDispatcher) Initialize(log logging.Logger) {
 	ed.log = log
-	ed.chainHandlers = make(map[ids.ID]map[string]interface{})
+	ed.chainHandlers = make(map[ids.ID]map[string]handler)
 	ed.handlers = make(map[string]interface{})
 }
 
-// Accept is called when a transaction or block is accepted
-func (ed *EventDispatcher) Accept(ctx *snow.Context, containerID ids.ID, container []byte) {
+// Accept is called when a transaction or block is accepted.
+// If the returned error is non-nil, the chain associated with [ctx] should shut
+// down and not commit [container] or any other container to its database as accepted.
+func (ed *EventDispatcher) Accept(ctx *snow.Context, containerID ids.ID, container []byte) error {
 	ed.lock.Lock()
 	defer ed.lock.Unlock()
 
@@ -39,28 +52,32 @@ func (ed *EventDispatcher) Accept(ctx *snow.Context, containerID ids.ID, contain
 		}
 
 		if err := handler.Accept(ctx, containerID, container); err != nil {
-			ed.log.Error("unable to Accept on %s for chainID %s: %s", id, ctx.ChainID, err)
+			ed.log.Error("handler %s on chain %s errored while accepting %s: %s", id, ctx.ChainID, containerID, err)
 		}
 	}
 
 	events, exist := ed.chainHandlers[ctx.ChainID]
 	if !exist {
-		return
+		return nil
 	}
 	for id, handler := range events {
-		handler, ok := handler.(Acceptor)
+		handlerFunc, ok := handler.handlerFunc.(Acceptor)
 		if !ok {
 			continue
 		}
 
-		if err := handler.Accept(ctx, containerID, container); err != nil {
-			ed.log.Error("unable to Accept on %s for chainID %s: %s", id, ctx.ChainID, err)
+		if err := handlerFunc.Accept(ctx, containerID, container); err != nil {
+			ed.log.Error("handler %s on chain %s errored while accepting %s: %s", id, ctx.ChainID, containerID, err)
+			if handler.dieOnError {
+				return fmt.Errorf("handler %s on chain %s errored while accepting %s: %w", id, ctx.ChainID, containerID, err)
+			}
 		}
 	}
+	return nil
 }
 
 // Reject is called when a transaction or block is rejected
-func (ed *EventDispatcher) Reject(ctx *snow.Context, containerID ids.ID, container []byte) {
+func (ed *EventDispatcher) Reject(ctx *snow.Context, containerID ids.ID, container []byte) error {
 	ed.lock.Lock()
 	defer ed.lock.Unlock()
 
@@ -77,10 +94,10 @@ func (ed *EventDispatcher) Reject(ctx *snow.Context, containerID ids.ID, contain
 
 	events, exist := ed.chainHandlers[ctx.ChainID]
 	if !exist {
-		return
+		return nil
 	}
 	for id, handler := range events {
-		handler, ok := handler.(Rejector)
+		handler, ok := handler.handlerFunc.(Rejector)
 		if !ok {
 			continue
 		}
@@ -89,10 +106,11 @@ func (ed *EventDispatcher) Reject(ctx *snow.Context, containerID ids.ID, contain
 			ed.log.Error("unable to Reject on %s for chainID %s: %s", id, ctx.ChainID, err)
 		}
 	}
+	return nil
 }
 
 // Issue is called when a transaction or block is issued
-func (ed *EventDispatcher) Issue(ctx *snow.Context, containerID ids.ID, container []byte) {
+func (ed *EventDispatcher) Issue(ctx *snow.Context, containerID ids.ID, container []byte) error {
 	ed.lock.Lock()
 	defer ed.lock.Unlock()
 
@@ -109,10 +127,10 @@ func (ed *EventDispatcher) Issue(ctx *snow.Context, containerID ids.ID, containe
 
 	events, exist := ed.chainHandlers[ctx.ChainID]
 	if !exist {
-		return
+		return nil
 	}
 	for id, handler := range events {
-		handler, ok := handler.(Issuer)
+		handler, ok := handler.handlerFunc.(Issuer)
 		if !ok {
 			continue
 		}
@@ -121,16 +139,19 @@ func (ed *EventDispatcher) Issue(ctx *snow.Context, containerID ids.ID, containe
 			ed.log.Error("unable to Issue on %s for chainID %s: %s", id, ctx.ChainID, err)
 		}
 	}
+	return nil
 }
 
-// RegisterChain places a new chain handler into the system
-func (ed *EventDispatcher) RegisterChain(chainID ids.ID, identifier string, handler interface{}) error {
+// RegisterChain causes [handlerFunc] to be invoked every time a container is issued, accepted or rejected on chain [chainID].
+// [handlerFunc] should implement at least one of Acceptor, Rejector, Issuer.
+// If [dieOnError], chain [chainID] stops if [handler].Accept is invoked and returns a non-nil error.
+func (ed *EventDispatcher) RegisterChain(chainID ids.ID, identifier string, handlerFunc interface{}, dieOnError bool) error {
 	ed.lock.Lock()
 	defer ed.lock.Unlock()
 
 	events, exist := ed.chainHandlers[chainID]
 	if !exist {
-		events = make(map[string]interface{})
+		events = make(map[string]handler)
 		ed.chainHandlers[chainID] = events
 	}
 
@@ -138,7 +159,10 @@ func (ed *EventDispatcher) RegisterChain(chainID ids.ID, identifier string, hand
 		return fmt.Errorf("handler %s already exists on chain %s", identifier, chainID)
 	}
 
-	events[identifier] = handler
+	events[identifier] = handler{
+		handlerFunc: handlerFunc,
+		dieOnError:  dieOnError,
+	}
 	return nil
 }
 

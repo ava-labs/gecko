@@ -1,5 +1,5 @@
 # As mentioned by https://github.com/golang/go/wiki/Ubuntu
-- task: Add Go repository
+- name: Add Go repository
   become: true
   apt_repository:
     repo: ppa:longsleep/golang-backports
@@ -8,8 +8,25 @@
 
 - name: Install Go
   become: true
+  # Apt doesn't support specifying a minimum version (e.g. foo >= 1.0)
+  # https://github.com/ansible/ansible/issues/69034
   apt:
     name:
-      - golang-go
+      - "golang-{{ golang_version_min_major }}.{{ golang_version_min_minor }}-go"
+  tags:
+    - golang_base
+
+- name: Query installed packages
+  package_facts:
+  tags:
+    - golang_base
+
+- name: Check minimum Go version
+  vars:
+    pkg_name: golang-{{ golang_version_min_major }}.{{ golang_version_min_minor }}-go
+  assert:
+    that:
+      - pkg_name in ansible_facts.packages
+      - ansible_facts.packages[pkg_name][0].version is version(golang_version_min, '>=')
   tags:
     - golang_base

@@ -21,14 +21,6 @@ const (
 
 	// BatchSize is the number of decision transaction to place into a block
 	BatchSize = 30
-
-	// Time interval to round to when issuing an advanceTimeTx to
-	// catch up the chain time closer to local time
-	roundInterval = time.Hour
-
-	// Time difference between local time and current chain time
-	// at which to attempt to increase the chain timestamp
-	catchUpTime = 2 * time.Hour
 )
 
 var (
@@ -252,35 +244,16 @@ func (m *Mempool) BuildBlock() (snowman.Block, error) {
 		return blk, m.vm.DB.Commit()
 	}
 
-	truncatedTime := localTime.Truncate(roundInterval)
-	// If the truncated time is before the next staker change time
-	// but more than [catchUpTime] past the local wall clock time
-	// then issue an advanceTime proposal to catch up to wall clock time
-	if truncatedTime.Before(nextStakerChangeTime) && truncatedTime.After(currentChainTimestamp.Add(catchUpTime)) {
-		advanceTimeTx, err := m.vm.newAdvanceTimeTx(truncatedTime)
-		if err != nil {
-			return nil, err
-		}
-		blk, err := m.vm.newProposalBlock(preferredID, preferredHeight+1, *advanceTimeTx)
-		if err != nil {
-			return nil, err
-		}
-		if err := m.vm.State.PutBlock(m.vm.DB, blk); err != nil {
-			return nil, err
-		}
-		return blk, m.vm.DB.Commit()
-	}
-
 	// Propose adding a new validator but only if their start time is in the
 	// future relative to local time (plus Delta)
 	syncTime := localTime.Add(syncBound)
 	for m.unissuedProposalTxs.Len() > 0 {
-		tx := m.unissuedProposalTxs.Remove()
-		m.unissuedTxIDs.Remove(tx.ID())
+		tx := m.unissuedProposalTxs.Peek()
+		txID := tx.ID()
 		utx := tx.UnsignedTx.(TimedTx)
 		startTime := utx.StartTime()
-		if syncTime.After(startTime) {
-			txID := tx.ID()
+		if startTime.Before(syncTime) {
+			m.unissuedProposalTxs.Remove()
 			m.unissuedTxIDs.Remove(txID)
 			errMsg := fmt.Sprintf(
 				"synchrony bound (%s) is later than staker start time (%s)",
@@ -292,6 +265,37 @@ func (m *Mempool) BuildBlock() (snowman.Block, error) {
 			continue
 		}
 
+		// If the chain timestamp is too far in the past to issue this transaction
+		// but according to local time, it's ready to be issued, then attempt to
+		// advance the timestamp, so it can be issued.
+		maxChainStartTime := currentChainTimestamp.Add(maxFutureStartTime)
+		maxLocalStartTime := localTime.Add(maxFutureStartTime)
+		// If the start time is too far in the future relative to local time
+		// drop the transaction and continue
+		if startTime.After(maxLocalStartTime) {
+			m.unissuedProposalTxs.Remove()
+			m.unissuedTxIDs.Remove(txID)
+			continue
+		}
+
+		if startTime.After(maxChainStartTime) {
+			advanceTimeTx, err := m.vm.newAdvanceTimeTx(localTime)
+			if err != nil {
+				return nil, err
+			}
+			blk, err := m.vm.newProposalBlock(preferredID, preferredHeight+1, *advanceTimeTx)
+			if err != nil {
+				return nil, err
+			}
+			if err := m.vm.State.PutBlock(m.vm.DB, blk); err != nil {
+				return nil, err
+			}
+			return blk, m.vm.DB.Commit()
+		}
+
+		// Attempt to issue the transaction
+		m.unissuedProposalTxs.Remove()
+		m.unissuedTxIDs.Remove(txID)
 		blk, err := m.vm.newProposalBlock(preferredID, preferredHeight+1, *tx)
 		if err != nil {
 			return nil, err
@@ -359,14 +363,6 @@ func (m *Mempool) ResetTimer() {
 	localTime := m.vm.clock.Time()
 	if !localTime.Before(nextStakerChangeTime) { // time is at or after the time for the next validator to join/leave
 		m.vm.SnowmanVM.NotifyBlockReady() // Should issue a proposal to advance timestamp
-		return
-	}
-
-	truncatedTime := localTime.Truncate(roundInterval)
-	if truncatedTime.Before(nextStakerChangeTime) && truncatedTime.After(timestamp.Add(catchUpTime)) {
-		// Should issue a proposal to advance timestamp closer to wall clock time
-		// without skipping any staker change times
-		m.vm.SnowmanVM.NotifyBlockReady()
 		return
 	}
 

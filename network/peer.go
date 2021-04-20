@@ -14,9 +14,20 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils"
 	"github.com/ava-labs/avalanchego/utils/formatting"
+	"github.com/ava-labs/avalanchego/utils/timer"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
 	"github.com/ava-labs/avalanchego/version"
 )
+
+// alias is a secondary IP address where a peer
+// was reached
+type alias struct {
+	// ip where peer was reached
+	ip utils.IPDesc
+
+	// expiry is network time when the ip should be released
+	expiry time.Time
+}
 
 type peer struct {
 	net *network // network this peer is part of
@@ -33,6 +44,10 @@ type peer struct {
 	// has been returned. is only modified on the connection's reader routine.
 	connected utils.AtomicBool
 
+	// if the peer is connected and the peer is able to follow the protocol. is
+	// only modified on the connection's reader routine.
+	compatible utils.AtomicBool
+
 	// only close the peer once
 	once sync.Once
 
@@ -44,14 +59,27 @@ type peer struct {
 
 	// lock to ensure that closing of the sender queue is handled safely
 	senderLock sync.Mutex
+
 	// queue of messages this connection is attempting to send the peer. Is
 	// closed when the connection is closed.
 	sender chan []byte
 
 	// ip may or may not be set when the peer is first started. is only modified
 	// on the connection's reader routine.
-	ip     utils.IPDesc
+	ip utils.IPDesc
+
+	// ipLock must be held when accessing [ip].
 	ipLock sync.RWMutex
+
+	// aliases is a list of IPs other than [ip] that we have connected to
+	// this peer at.
+	aliases []alias
+
+	// aliasTimer triggers the release of expired records from [aliases].
+	aliasTimer *timer.Timer
+
+	// aliasLock must be held when accessing [aliases] or [aliasTimer].
+	aliasLock sync.Mutex
 
 	// id should be set when the peer is first created.
 	id ids.ShortID
@@ -63,6 +91,7 @@ type peer struct {
 	versionStruct, versionStr utils.AtomicInterface
 
 	// unix time of the last message sent and received respectively
+	// Must only be accessed atomically
 	lastSent, lastReceived int64
 
 	tickerCloser chan struct{}
@@ -71,7 +100,20 @@ type peer struct {
 	tickerOnce sync.Once
 }
 
-// assume the stateLock is held
+// newPeer returns a properly initialized *peer.
+func newPeer(net *network, conn net.Conn, ip utils.IPDesc) *peer {
+	p := &peer{
+		net:          net,
+		conn:         conn,
+		ip:           ip,
+		tickerCloser: make(chan struct{}),
+	}
+	p.aliasTimer = timer.NewTimer(p.releaseExpiredAliases)
+
+	return p
+}
+
+// assume the [stateLock] is held
 func (p *peer) Start() {
 	go p.ReadMessages()
 	go p.WriteMessages()
@@ -80,6 +122,7 @@ func (p *peer) Start() {
 func (p *peer) StartTicker() {
 	go p.requestFinishHandshake()
 	go p.sendPings()
+	go p.monitorAliases()
 }
 
 func (p *peer) sendPings() {
@@ -129,6 +172,21 @@ func (p *peer) requestFinishHandshake() {
 			return
 		}
 	}
+}
+
+// monitorAliases periodically attempts
+// to release timed out alias IPs of the
+// peer.
+//
+// monitorAliases will acquire [stateLock]
+// when an alias is released.
+func (p *peer) monitorAliases() {
+	go func() {
+		<-p.tickerCloser
+		p.aliasTimer.Stop()
+	}()
+
+	p.aliasTimer.Dispatch()
 }
 
 // attempt to read messages from the peer
@@ -195,7 +253,7 @@ func (p *peer) ReadMessages() {
 				p.id,
 				formatting.DumpBytes{Bytes: msgBytes},
 				err)
-			return
+			continue
 		}
 
 		p.handle(msg)
@@ -229,11 +287,13 @@ func (p *peer) WriteMessages() {
 				byteSlice = byteSlice[written:]
 			}
 		}
-		atomic.StoreInt64(&p.lastSent, p.net.clock.Time().Unix())
+		now := p.net.clock.Time().Unix()
+		atomic.StoreInt64(&p.lastSent, now)
+		atomic.StoreInt64(&p.net.lastMsgSentTime, now)
 	}
 }
 
-// send assumes that the stateLock is not held.
+// send assumes that the [stateLock] is not held.
 func (p *peer) Send(msg Msg) bool {
 	p.senderLock.Lock()
 	defer p.senderLock.Unlock()
@@ -278,14 +338,13 @@ func (p *peer) Send(msg Msg) bool {
 	}
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) handle(msg Msg) {
-	p.net.heartbeat()
+	now := p.net.clock.Time()
+	atomic.StoreInt64(&p.lastReceived, now.Unix())
+	atomic.StoreInt64(&p.net.lastMsgReceivedTime, now.Unix())
 
-	currentTime := p.net.clock.Time()
-	atomic.StoreInt64(&p.lastReceived, currentTime.Unix())
-
-	if err := p.conn.SetReadDeadline(currentTime.Add(p.net.pingPongTimeout)); err != nil {
+	if err := p.conn.SetReadDeadline(now.Add(p.net.pingPongTimeout)); err != nil {
 		p.net.log.Verbo("error on setting the connection read timeout %s, closing the connection", err)
 		p.Close()
 		return
@@ -298,6 +357,7 @@ func (p *peer) handle(msg Msg) {
 		return
 	}
 	msgMetrics.numReceived.Inc()
+	msgMetrics.receivedBytes.Add(float64(len(msg.Bytes())))
 
 	switch op {
 	case Version:
@@ -333,8 +393,18 @@ func (p *peer) handle(msg Msg) {
 	}
 
 	peerVersion := p.versionStruct.GetValue().(version.Version)
-	if peerVersion.Before(minimumUnmaskedVersion) && time.Until(p.net.apricotPhase0Time) < 0 {
+	if p.net.versionCompatibility.Compatible(peerVersion) != nil {
 		p.net.log.Verbo("dropping message from un-upgraded validator %s", p.id)
+
+		if p.compatible.GetValue() {
+			p.net.stateLock.Lock()
+			defer p.net.stateLock.Unlock()
+
+			if p.compatible.GetValue() {
+				p.net.router.Disconnected(p.id)
+				p.compatible.SetValue(false)
+			}
+		}
 		return
 	}
 
@@ -377,7 +447,7 @@ func (p *peer) dropMessage(connPendingLen, networkPendingLen int64) bool {
 			connPendingLen > p.net.maxNetworkPendingSendBytes/20) // Check to see if this connection is using too much memory
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) Close() { p.once.Do(p.close) }
 
 // assumes only `peer.Close` calls this
@@ -398,17 +468,27 @@ func (p *peer) close() {
 	close(p.sender)
 	p.senderLock.Unlock()
 
+	peerPending := atomic.LoadInt64(&p.pendingBytes)
+	atomic.AddInt64(&p.net.pendingBytes, -peerPending)
+
 	p.net.disconnected(p)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) GetVersion() {
 	msg, err := p.net.b.GetVersion()
 	p.net.log.AssertNoError(err)
-	p.Send(msg)
+	if p.Send(msg) {
+		p.net.getVersion.numSent.Inc()
+		p.net.getVersion.sentBytes.Add(float64(len(msg.Bytes())))
+		p.net.sendFailRateCalculator.Observe(0, p.net.clock.Time())
+	} else {
+		p.net.getVersion.numFailed.Inc()
+		p.net.sendFailRateCalculator.Observe(1, p.net.clock.Time())
+	}
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) Version() {
 	p.net.stateLock.RLock()
 	msg, err := p.net.b.Version(
@@ -416,18 +496,32 @@ func (p *peer) Version() {
 		p.net.nodeID,
 		p.net.clock.Unix(),
 		p.net.ip.IP(),
-		p.net.version.String(),
+		p.net.versionCompatibility.Version().String(),
 	)
 	p.net.stateLock.RUnlock()
 	p.net.log.AssertNoError(err)
-	p.Send(msg)
+	if p.Send(msg) {
+		p.net.metrics.version.numSent.Inc()
+		p.net.metrics.version.sentBytes.Add(float64(len(msg.Bytes())))
+		p.net.sendFailRateCalculator.Observe(0, p.net.clock.Time())
+	} else {
+		p.net.metrics.version.numFailed.Inc()
+		p.net.sendFailRateCalculator.Observe(1, p.net.clock.Time())
+	}
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) GetPeerList() {
 	msg, err := p.net.b.GetPeerList()
 	p.net.log.AssertNoError(err)
-	p.Send(msg)
+	if p.Send(msg) {
+		p.net.getPeerlist.numSent.Inc()
+		p.net.getPeerlist.sentBytes.Add(float64(len(msg.Bytes())))
+		p.net.sendFailRateCalculator.Observe(0, p.net.clock.Time())
+	} else {
+		p.net.getPeerlist.numFailed.Inc()
+		p.net.sendFailRateCalculator.Observe(1, p.net.clock.Time())
+	}
 }
 
 // assumes the stateLock is not held
@@ -436,42 +530,57 @@ func (p *peer) SendPeerList() {
 	p.PeerList(ips)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) PeerList(peers []utils.IPDesc) {
 	msg, err := p.net.b.PeerList(peers)
 	if err != nil {
 		p.net.log.Warn("failed to send PeerList message due to %s", err)
 		return
 	}
-	p.Send(msg)
+	if p.Send(msg) {
+		p.net.peerlist.numSent.Inc()
+		p.net.peerlist.sentBytes.Add(float64(len(msg.Bytes())))
+		p.net.sendFailRateCalculator.Observe(0, p.net.clock.Time())
+	} else {
+		p.net.peerlist.numFailed.Inc()
+		p.net.sendFailRateCalculator.Observe(1, p.net.clock.Time())
+	}
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) Ping() {
 	msg, err := p.net.b.Ping()
 	p.net.log.AssertNoError(err)
 	if p.Send(msg) {
 		p.net.ping.numSent.Inc()
+		p.net.ping.sentBytes.Add(float64(len(msg.Bytes())))
+		p.net.sendFailRateCalculator.Observe(0, p.net.clock.Time())
 	} else {
 		p.net.ping.numFailed.Inc()
+		p.net.sendFailRateCalculator.Observe(1, p.net.clock.Time())
 	}
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) Pong() {
 	msg, err := p.net.b.Pong()
 	p.net.log.AssertNoError(err)
 	if p.Send(msg) {
 		p.net.pong.numSent.Inc()
+		p.net.pong.sentBytes.Add(float64(len(msg.Bytes())))
+		p.net.sendFailRateCalculator.Observe(0, p.net.clock.Time())
 	} else {
 		p.net.pong.numFailed.Inc()
+		p.net.sendFailRateCalculator.Observe(1, p.net.clock.Time())
 	}
 }
 
-// assumes the stateLock is not held
-func (p *peer) getVersion(_ Msg) { p.Version() }
+// assumes the [stateLock] is not held
+func (p *peer) getVersion(msg Msg) {
+	p.Version()
+}
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) version(msg Msg) {
 	if p.gotVersion.GetValue() {
 		p.net.log.Verbo("dropping duplicated version message from %s", p.id)
@@ -521,7 +630,7 @@ func (p *peer) version(msg Msg) {
 		return
 	}
 
-	if p.net.version.Before(peerVersion) {
+	if p.net.versionCompatibility.Version().Before(peerVersion) {
 		if p.net.beacons.Contains(p.id) {
 			p.net.log.Info("beacon %s attempting to connect with newer version %s. You may want to update your client",
 				p.id,
@@ -533,7 +642,7 @@ func (p *peer) version(msg Msg) {
 		}
 	}
 
-	if err := p.net.version.Compatible(peerVersion); err != nil {
+	if err := p.net.versionCompatibility.Connectable(peerVersion); err != nil {
 		p.net.log.Debug("peer version not compatible due to %s", err)
 
 		if !p.net.beacons.Contains(p.id) {
@@ -571,14 +680,14 @@ func (p *peer) version(msg Msg) {
 	p.tryMarkConnected()
 }
 
-// assumes the stateLock is not held
-func (p *peer) getPeerList(_ Msg) {
+// assumes the [stateLock] is not held
+func (p *peer) getPeerList(msg Msg) {
 	if p.gotVersion.GetValue() {
 		p.SendPeerList()
 	}
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) peerList(msg Msg) {
 	ips := msg.Get(Peers).([]utils.IPDesc)
 
@@ -597,13 +706,15 @@ func (p *peer) peerList(msg Msg) {
 	}
 }
 
-// assumes the stateLock is not held
-func (p *peer) ping(_ Msg) { p.Pong() }
+// assumes the [stateLock] is not held
+func (p *peer) ping(_ Msg) {
+	p.Pong()
+}
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) pong(_ Msg) {}
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) getAcceptedFrontier(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -613,7 +724,7 @@ func (p *peer) getAcceptedFrontier(msg Msg) {
 	p.net.router.GetAcceptedFrontier(p.id, chainID, requestID, deadline)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) acceptedFrontier(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -639,7 +750,7 @@ func (p *peer) acceptedFrontier(msg Msg) {
 	p.net.router.AcceptedFrontier(p.id, chainID, requestID, containerIDs)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) getAccepted(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -666,7 +777,7 @@ func (p *peer) getAccepted(msg Msg) {
 	p.net.router.GetAccepted(p.id, chainID, requestID, deadline, containerIDs)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) accepted(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -692,7 +803,7 @@ func (p *peer) accepted(msg Msg) {
 	p.net.router.Accepted(p.id, chainID, requestID, containerIDs)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) get(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -715,7 +826,7 @@ func (p *peer) getAncestors(msg Msg) {
 	p.net.router.GetAncestors(p.id, chainID, requestID, deadline, containerID)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) put(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -727,7 +838,7 @@ func (p *peer) put(msg Msg) {
 	p.net.router.Put(p.id, chainID, requestID, containerID, container)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) multiPut(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -737,7 +848,7 @@ func (p *peer) multiPut(msg Msg) {
 	p.net.router.MultiPut(p.id, chainID, requestID, containers)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) pushQuery(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -750,7 +861,7 @@ func (p *peer) pushQuery(msg Msg) {
 	p.net.router.PushQuery(p.id, chainID, requestID, deadline, containerID, container)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) pullQuery(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -762,7 +873,7 @@ func (p *peer) pullQuery(msg Msg) {
 	p.net.router.PullQuery(p.id, chainID, requestID, deadline, containerID)
 }
 
-// assumes the stateLock is not held
+// assumes the [stateLock] is not held
 func (p *peer) chits(msg Msg) {
 	chainID, err := ids.ToID(msg.Get(ChainID).([]byte))
 	p.net.log.AssertNoError(err)
@@ -788,7 +899,7 @@ func (p *peer) chits(msg Msg) {
 	p.net.router.Chits(p.id, chainID, requestID, containerIDs)
 }
 
-// assumes the stateLock is held
+// assumes the [stateLock] is held
 func (p *peer) tryMarkConnected() {
 	if !p.connected.GetValue() && // not already connected
 		p.gotVersion.GetValue() && // not waiting for version
@@ -835,4 +946,85 @@ func (p *peer) getIP() utils.IPDesc {
 	p.ipLock.RLock()
 	defer p.ipLock.RUnlock()
 	return p.ip
+}
+
+// addAlias marks that we have found another
+// IP that we can connect to this peer at.
+//
+// assumes [stateLock] is held
+func (p *peer) addAlias(ip utils.IPDesc) {
+	p.aliasLock.Lock()
+	defer p.aliasLock.Unlock()
+
+	p.net.peerAliasIPs[ip.String()] = struct{}{}
+	p.aliases = append(p.aliases, alias{
+		ip:     ip,
+		expiry: p.net.clock.Time().Add(p.net.peerAliasTimeout),
+	})
+
+	// Set the [aliasTimer] if this ip is the first alias we put
+	// in [aliases].
+	if len(p.aliases) == 1 {
+		p.aliasTimer.SetTimeoutIn(p.net.peerAliasTimeout)
+	}
+}
+
+// releaseNextAlias returns the next released alias or nil if none was released.
+// If none was released, then this will schedule the next time to remove an
+// alias.
+//
+// assumes [stateLock] is held
+func (p *peer) releaseNextAlias(now time.Time) *alias {
+	p.aliasLock.Lock()
+	defer p.aliasLock.Unlock()
+
+	if len(p.aliases) == 0 {
+		return nil
+	}
+
+	next := p.aliases[0]
+	if timeUntilExpiry := next.expiry.Sub(now); timeUntilExpiry > 0 {
+		p.aliasTimer.SetTimeoutIn(timeUntilExpiry)
+		return nil
+	}
+	p.aliases = p.aliases[1:]
+
+	p.net.log.Verbo("released alias %s for peer %s", next.ip, p.id)
+	return &next
+}
+
+// releaseExpiredAliases frees expired IP aliases. If there is an IP pending
+// expiration, then the expiration is scheduled.
+//
+// assumes [stateLock] is not held
+func (p *peer) releaseExpiredAliases() {
+	currentTime := p.net.clock.Time()
+	for {
+		next := p.releaseNextAlias(currentTime)
+		if next == nil {
+			return
+		}
+
+		// We should always release [aliasLock] before attempting
+		// to acquire the [stateLock] to avoid deadlocking on addAlias.
+		p.net.stateLock.Lock()
+		delete(p.net.peerAliasIPs, next.ip.String())
+		p.net.stateLock.Unlock()
+	}
+}
+
+// releaseAllAliases frees all alias IPs.
+//
+// assumes [stateLock] is held and that [aliasTimer]
+// has been stopped
+func (p *peer) releaseAllAliases() {
+	p.aliasLock.Lock()
+	defer p.aliasLock.Unlock()
+
+	for _, alias := range p.aliases {
+		delete(p.net.peerAliasIPs, alias.ip.String())
+
+		p.net.log.Verbo("released alias %s for peer %s", alias.ip, p.id)
+	}
+	p.aliases = nil
 }

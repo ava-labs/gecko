@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
+	"github.com/ava-labs/avalanchego/utils/wrappers"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/ghttpproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/greadcloser"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/greadcloser/greadcloserproto"
@@ -19,13 +20,17 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/gresponsewriter/gresponsewriterproto"
 )
 
-// Server is a http.Handler that is managed over RPC.
+var (
+	_ ghttpproto.HTTPServer = &Server{}
+)
+
+// Server is an http.Handler that is managed over RPC.
 type Server struct {
 	handler http.Handler
 	broker  *plugin.GRPCBroker
 }
 
-// NewServer returns a http.Handler instance manage remotely
+// NewServer returns an http.Handler instance managed remotely
 func NewServer(handler http.Handler, broker *plugin.GRPCBroker) *Server {
 	return &Server{
 		handler: handler,
@@ -33,19 +38,19 @@ func NewServer(handler http.Handler, broker *plugin.GRPCBroker) *Server {
 	}
 }
 
-// Handle ...
 func (s *Server) Handle(ctx context.Context, req *ghttpproto.HTTPRequest) (*ghttpproto.HTTPResponse, error) {
 	writerConn, err := s.broker.Dial(req.ResponseWriter.Id)
 	if err != nil {
 		return nil, err
 	}
-	defer writerConn.Close()
 
 	readerConn, err := s.broker.Dial(req.Request.Body)
 	if err != nil {
+		// Drop any error that occurs during closing to return the original
+		// error.
+		_ = writerConn.Close()
 		return nil, err
 	}
-	defer readerConn.Close()
 
 	writerHeaders := make(http.Header)
 	for _, elem := range req.ResponseWriter.Header {
@@ -144,6 +149,10 @@ func (s *Server) Handle(ctx context.Context, req *ghttpproto.HTTPRequest) (*ghtt
 
 	s.handler.ServeHTTP(writer, request)
 
-	// return the response
-	return &ghttpproto.HTTPResponse{}, nil
+	errs := wrappers.Errs{}
+	errs.Add(
+		writerConn.Close(),
+		readerConn.Close(),
+	)
+	return &ghttpproto.HTTPResponse{}, errs.Err
 }

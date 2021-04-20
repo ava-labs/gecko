@@ -6,5 +6,5 @@
 - name: Restart Avalanche service
   become: true
   service:
-    name: avalanche
+    name: "{{ avalanche_daemon_service_name }}"
     state: restarted

@@ -30,7 +30,6 @@ func BenchmarkLoadUser(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Failed to get user keystore db: %s", err)
 		}
-		defer db.Close()
 
 		user := userState{vm: vm}
 		factory := crypto.FactorySECP256K1R{}
@@ -63,6 +62,12 @@ func BenchmarkLoadUser(b *testing.B) {
 			if _, _, err := vm.LoadUser(username, password, fromAddrs); err != nil {
 				b.Fatalf("Failed to load user: %s", err)
 			}
+		}
+
+		b.StopTimer()
+
+		if err := db.Close(); err != nil {
+			b.Fatal(err)
 		}
 	}
 

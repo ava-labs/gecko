@@ -5,7 +5,6 @@ package genesis
 
 import (
 	"fmt"
-	"io/ioutil"
 	"path"
 	"testing"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/hashing"
+	"github.com/ava-labs/avalanchego/utils/perms"
 	"github.com/ava-labs/avalanchego/vms/avm"
 	"github.com/ava-labs/avalanchego/vms/evm"
 	"github.com/ava-labs/avalanchego/vms/platformvm"
@@ -271,7 +271,7 @@ func TestGenesis(t *testing.T) {
 		},
 		"local": {
 			networkID: constants.LocalID,
-			expected:  "d036edc78cee38f003c529fa2ca3f95da47c7b87f5f3c0e126c9bf34e7f2285a",
+			expected:  "a3c68cdeed559645a1de90e7ad5a4adf691e9d2094dbfb4dd5d9515fa567258b",
 		},
 		"local (with custom specified)": {
 			networkID:    constants.LocalID,
@@ -307,7 +307,7 @@ func TestGenesis(t *testing.T) {
 			var customFile string
 			if len(test.customConfig) > 0 {
 				customFile = path.Join(t.TempDir(), "config.json")
-				assert.NoError(ioutil.WriteFile(customFile, []byte(test.customConfig), 0600))
+				assert.NoError(perms.WriteFile(customFile, []byte(test.customConfig), perms.ReadWrite))
 			}
 
 			if len(test.missingFilepath) > 0 {
@@ -376,7 +376,7 @@ func TestVMGenesis(t *testing.T) {
 				},
 				{
 					vmID:       evm.ID,
-					expectedID: "26sSDdFXoKeShAqVfvugUiUQKhMZtHYDLeBqmBfNfcdjziTrZA",
+					expectedID: "2XFHbWN57HrjHW1JqhP9wzj92eYHpiH7EGLnY9mNfWn9w9CvWR",
 				},
 			},
 		},

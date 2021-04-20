@@ -12,7 +12,7 @@ import (
 // engine.
 type Storage interface {
 	// Get a vertex by its hash from storage.
-	Get(vtxID ids.ID) (avalanche.Vertex, error)
+	GetVtx(vtxID ids.ID) (avalanche.Vertex, error)
 
 	// Edge returns a list of accepted vertex IDs with no accepted children.
 	Edge() (vtxIDs []ids.ID)

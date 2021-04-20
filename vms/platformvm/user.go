@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ava-labs/avalanchego/database"
+	"github.com/ava-labs/avalanchego/database/encdb"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/crypto"
 )
@@ -23,7 +23,7 @@ var (
 
 type user struct {
 	// This user's database, acquired from the keystore
-	db database.Database
+	db *encdb.Database
 }
 
 // Get the addresses controlled by this user

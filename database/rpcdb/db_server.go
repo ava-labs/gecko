@@ -39,50 +39,54 @@ func NewServer(db database.Database) *DatabaseServer {
 // Has delegates the Has call to the managed database and returns the result
 func (db *DatabaseServer) Has(_ context.Context, req *rpcdbproto.HasRequest) (*rpcdbproto.HasResponse, error) {
 	has, err := db.db.Has(req.Key)
-	if err != nil {
-		return nil, err
-	}
-	return &rpcdbproto.HasResponse{Has: has}, err
+	return &rpcdbproto.HasResponse{
+		Has: has,
+		Err: errorToErrCode[err],
+	}, errorToRPCError(err)
 }
 
 // Get delegates the Get call to the managed database and returns the result
 func (db *DatabaseServer) Get(_ context.Context, req *rpcdbproto.GetRequest) (*rpcdbproto.GetResponse, error) {
 	value, err := db.db.Get(req.Key)
-	if err != nil {
-		return nil, err
-	}
-	return &rpcdbproto.GetResponse{Value: value}, nil
+	return &rpcdbproto.GetResponse{
+		Value: value,
+		Err:   errorToErrCode[err],
+	}, errorToRPCError(err)
 }
 
 // Put delegates the Put call to the managed database and returns the result
 func (db *DatabaseServer) Put(_ context.Context, req *rpcdbproto.PutRequest) (*rpcdbproto.PutResponse, error) {
-	return &rpcdbproto.PutResponse{}, db.db.Put(req.Key, req.Value)
+	err := db.db.Put(req.Key, req.Value)
+	return &rpcdbproto.PutResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }
 
 // Delete delegates the Delete call to the managed database and returns the
 // result
 func (db *DatabaseServer) Delete(_ context.Context, req *rpcdbproto.DeleteRequest) (*rpcdbproto.DeleteResponse, error) {
-	return &rpcdbproto.DeleteResponse{}, db.db.Delete(req.Key)
+	err := db.db.Delete(req.Key)
+	return &rpcdbproto.DeleteResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }
 
 // Stat delegates the Stat call to the managed database and returns the result
 func (db *DatabaseServer) Stat(_ context.Context, req *rpcdbproto.StatRequest) (*rpcdbproto.StatResponse, error) {
 	stat, err := db.db.Stat(req.Property)
-	if err != nil {
-		return nil, err
-	}
-	return &rpcdbproto.StatResponse{Stat: stat}, nil
+	return &rpcdbproto.StatResponse{
+		Stat: stat,
+		Err:  errorToErrCode[err],
+	}, errorToRPCError(err)
 }
 
 // Compact delegates the Compact call to the managed database and returns the
 // result
 func (db *DatabaseServer) Compact(_ context.Context, req *rpcdbproto.CompactRequest) (*rpcdbproto.CompactResponse, error) {
-	return &rpcdbproto.CompactResponse{}, db.db.Compact(req.Start, req.Limit)
+	err := db.db.Compact(req.Start, req.Limit)
+	return &rpcdbproto.CompactResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }
 
 // Close delegates the Close call to the managed database and returns the result
 func (db *DatabaseServer) Close(context.Context, *rpcdbproto.CloseRequest) (*rpcdbproto.CloseResponse, error) {
-	return &rpcdbproto.CloseResponse{}, db.db.Close()
+	err := db.db.Close()
+	return &rpcdbproto.CloseResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }
 
 // WriteBatch takes in a set of key-value pairs and atomically writes them to
@@ -95,17 +99,18 @@ func (db *DatabaseServer) WriteBatch(_ context.Context, req *rpcdbproto.WriteBat
 
 	for _, put := range req.Puts {
 		if err := db.batch.Put(put.Key, put.Value); err != nil {
-			return nil, err
+			return &rpcdbproto.WriteBatchResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 		}
 	}
 
 	for _, del := range req.Deletes {
 		if err := db.batch.Delete(del.Key); err != nil {
-			return nil, err
+			return &rpcdbproto.WriteBatchResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 		}
 	}
 
-	return &rpcdbproto.WriteBatchResponse{}, db.batch.Write()
+	err := db.batch.Write()
+	return &rpcdbproto.WriteBatchResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }
 
 // NewIteratorWithStartAndPrefix allocates an iterator and returns the iterator
@@ -147,7 +152,8 @@ func (db *DatabaseServer) IteratorError(_ context.Context, req *rpcdbproto.Itera
 	if !exists {
 		return nil, errUnknownIterator
 	}
-	return &rpcdbproto.IteratorErrorResponse{}, it.Error()
+	err := it.Error()
+	return &rpcdbproto.IteratorErrorResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }
 
 // IteratorRelease attempts to release the resources allocated to an iterator
@@ -156,9 +162,12 @@ func (db *DatabaseServer) IteratorRelease(_ context.Context, req *rpcdbproto.Ite
 	defer db.lock.Unlock()
 
 	it, exists := db.iterators[req.Id]
-	if exists {
-		delete(db.iterators, req.Id)
-		it.Release()
+	if !exists {
+		return &rpcdbproto.IteratorReleaseResponse{Err: 0}, nil
 	}
-	return &rpcdbproto.IteratorReleaseResponse{}, nil
+
+	delete(db.iterators, req.Id)
+	err := it.Error()
+	it.Release()
+	return &rpcdbproto.IteratorReleaseResponse{Err: errorToErrCode[err]}, errorToRPCError(err)
 }

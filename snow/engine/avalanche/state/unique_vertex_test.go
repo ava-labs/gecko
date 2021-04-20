@@ -19,7 +19,7 @@ func newSerializer(t *testing.T, parse func([]byte) (snowstorm.Tx, error)) *Seri
 	vm := vertex.TestVM{}
 	vm.T = t
 	vm.Default(true)
-	vm.ParseF = parse
+	vm.ParseTxF = parse
 
 	baseDB := memdb.New()
 	ctx := snow.DefaultContextTest()

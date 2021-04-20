@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/ava-labs/avalanchego/database/encdb"
 	"github.com/ava-labs/avalanchego/database/memdb"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/crypto"
@@ -37,8 +38,10 @@ func TestUserNilDB(t *testing.T) {
 }
 
 func TestUserClosedDB(t *testing.T) {
-	db := memdb.New()
-	err := db.Close()
+	db, err := encdb.New([]byte(testPassword), memdb.New())
+	assert.NoError(t, err)
+
+	err = db.Close()
 	assert.NoError(t, err)
 
 	u := user{db}
@@ -64,14 +67,20 @@ func TestUserClosedDB(t *testing.T) {
 }
 
 func TestUserNilSK(t *testing.T) {
-	u := user{db: memdb.New()}
+	db, err := encdb.New([]byte(testPassword), memdb.New())
+	assert.NoError(t, err)
 
-	err := u.putAddress(nil)
+	u := user{db: db}
+
+	err = u.putAddress(nil)
 	assert.Error(t, err, "nil key should have caused an error")
 }
 
 func TestUser(t *testing.T) {
-	u := user{db: memdb.New()}
+	db, err := encdb.New([]byte(testPassword), memdb.New())
+	assert.NoError(t, err)
+
+	u := user{db: db}
 
 	addresses, err := u.getAddresses()
 	assert.NoError(t, err)

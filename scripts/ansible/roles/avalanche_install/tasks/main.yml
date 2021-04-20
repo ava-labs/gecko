@@ -3,7 +3,13 @@
   file:
     path: "{{ item.path }}"
     state: directory
-    mode: preserve
+    # This task intentionally leaves the owner, group, & mode unspecified.
+    # These directories (e.g. /var/local/log) are shared resources.
+    # We lack the authority to unilaterlally decide their permissions.
+    # The goals are
+    #  - Don't modify existing permissions, if the directories already exist.
+    #  - Follow system policy (e.g. umask ), if the directories are created.
+    # noqa 208
   loop:
     - path: "{{ sharedstatedir }}"
     - path: "{{ logdir }}"
@@ -40,7 +46,7 @@
   become: true
   copy:
     src: "{{ avalanche_binary }}"
-    dest: "{{ bindir }}/avalanche"
+    dest: "{{ bindir }}/{{ avalanche_binary | basename }}"
     remote_src: true
     owner: root
     group: root

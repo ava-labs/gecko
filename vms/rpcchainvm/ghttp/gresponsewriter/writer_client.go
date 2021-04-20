@@ -20,14 +20,20 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/gwriter/gwriterproto"
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+var (
+	_ http.ResponseWriter = &Client{}
+	_ http.Flusher        = &Client{}
+	_ http.Hijacker       = &Client{}
+)
+
+// Client is an http.ResponseWriter that talks over RPC.
 type Client struct {
 	client gresponsewriterproto.WriterClient
 	header http.Header
 	broker *plugin.GRPCBroker
 }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns a response writer connected to a remote response writer
 func NewClient(header http.Header, client gresponsewriterproto.WriterClient, broker *plugin.GRPCBroker) *Client {
 	return &Client{
 		client: client,
@@ -36,10 +42,8 @@ func NewClient(header http.Header, client gresponsewriterproto.WriterClient, bro
 	}
 }
 
-// Header ...
 func (c *Client) Header() http.Header { return c.header }
 
-// Write ...
 func (c *Client) Write(payload []byte) (int, error) {
 	req := &gresponsewriterproto.WriteRequest{
 		Headers: make([]*gresponsewriterproto.Header, 0, len(c.header)),
@@ -58,7 +62,6 @@ func (c *Client) Write(payload []byte) (int, error) {
 	return int(resp.Written), nil
 }
 
-// WriteHeader ...
 func (c *Client) WriteHeader(statusCode int) {
 	req := &gresponsewriterproto.WriteHeaderRequest{
 		Headers:    make([]*gresponsewriterproto.Header, 0, len(c.header)),
@@ -74,7 +77,6 @@ func (c *Client) WriteHeader(statusCode int) {
 	_, _ = c.client.WriteHeader(context.Background(), req)
 }
 
-// Flush ...
 func (c *Client) Flush() {
 	// TODO: is there a way to handle the error here?
 	_, _ = c.client.Flush(context.Background(), &gresponsewriterproto.FlushRequest{})
@@ -88,7 +90,6 @@ type addr struct {
 func (a *addr) Network() string { return a.network }
 func (a *addr) String() string  { return a.str }
 
-// Hijack ...
 func (c *Client) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	resp, err := c.client.Hijack(context.Background(), &gresponsewriterproto.HijackRequest{})
 	if err != nil {

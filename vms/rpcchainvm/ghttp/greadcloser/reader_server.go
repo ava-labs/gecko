@@ -10,15 +10,18 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/greadcloser/greadcloserproto"
 )
 
-// Server is a http.Handler that is managed over RPC.
+var (
+	_ greadcloserproto.ReaderServer = &Server{}
+)
+
+// Server is a io.ReadCloser that is managed over RPC.
 type Server struct{ readCloser io.ReadCloser }
 
-// NewServer returns a http.Handler instance manage remotely
+// NewServer returns an io.ReadCloser instance managed remotely
 func NewServer(readCloser io.ReadCloser) *Server {
 	return &Server{readCloser: readCloser}
 }
 
-// Read ...
 func (s *Server) Read(ctx context.Context, req *greadcloserproto.ReadRequest) (*greadcloserproto.ReadResponse, error) {
 	buf := make([]byte, int(req.Length))
 	n, err := s.readCloser.Read(buf)
@@ -32,7 +35,6 @@ func (s *Server) Read(ctx context.Context, req *greadcloserproto.ReadRequest) (*
 	return resp, nil
 }
 
-// Close ...
 func (s *Server) Close(ctx context.Context, req *greadcloserproto.CloseRequest) (*greadcloserproto.CloseResponse, error) {
 	return &greadcloserproto.CloseResponse{}, s.readCloser.Close()
 }

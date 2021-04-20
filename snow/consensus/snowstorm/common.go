@@ -5,6 +5,7 @@ package snowstorm
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/choices"
+	"github.com/ava-labs/avalanchego/snow/consensus/metrics"
 	"github.com/ava-labs/avalanchego/snow/events"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
@@ -19,9 +21,11 @@ import (
 	sbcon "github.com/ava-labs/avalanchego/snow/consensus/snowball"
 )
 
+var errUnhealthy = errors.New("snowstorm consensus is not healthy")
+
 type common struct {
 	// metrics that describe this consensus instance
-	metrics
+	metrics.Metrics
 
 	// context that this consensus instance is executing in
 	ctx *snow.Context
@@ -56,10 +60,10 @@ func (c *common) Initialize(ctx *snow.Context, params sbcon.Parameters) error {
 	c.ctx = ctx
 	c.params = params
 
-	if err := c.metrics.Initialize(params.Namespace, params.Metrics); err != nil {
+	if err := c.Metrics.Initialize("txs", "transaction(s)", ctx.Log, params.Namespace, params.Metrics); err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
-	return params.Valid()
+	return params.Verify()
 }
 
 // Parameters implements the Snowstorm interface
@@ -87,6 +91,25 @@ func (c *common) Finalized() bool {
 	return numPreferences == 0
 }
 
+// HealthCheck returns information about the consensus health.
+func (c *common) HealthCheck() (interface{}, error) {
+	numOutstandingTxs := c.Metrics.ProcessingLen()
+	healthy := numOutstandingTxs <= c.params.MaxOutstandingItems
+	details := map[string]interface{}{
+		"outstandingTransactions": numOutstandingTxs,
+	}
+
+	// check for long running transactions
+	timeReqRunning := c.Metrics.MeasureAndGetOldestDuration()
+	healthy = healthy && timeReqRunning <= c.params.MaxItemProcessingTime
+	details["longestRunningTx"] = timeReqRunning.String()
+
+	if !healthy {
+		return details, errUnhealthy
+	}
+	return details, nil
+}
+
 // shouldVote returns if the provided tx should be voted on to determine if it
 // can be accepted. If the tx can be vacuously accepted, the tx will be accepted
 // and will therefore not be valid to be voted on.
@@ -100,10 +123,12 @@ func (c *common) shouldVote(con Consensus, tx Tx) (bool, error) {
 	bytes := tx.Bytes()
 
 	// Notify the IPC socket that this tx has been issued.
-	c.ctx.DecisionDispatcher.Issue(c.ctx, txID, bytes)
+	if err := c.ctx.DecisionDispatcher.Issue(c.ctx, txID, bytes); err != nil {
+		return false, err
+	}
 
 	// Notify the metrics that this transaction is being issued.
-	c.metrics.Issued(txID)
+	c.Metrics.Issued(txID)
 
 	// If this tx has inputs, it needs to be voted on before being accepted.
 	if inputs := tx.InputIDs(); len(inputs) != 0 {
@@ -114,42 +139,44 @@ func (c *common) shouldVote(con Consensus, tx Tx) (bool, error) {
 	// any conflicting transactions. Therefore, this transaction is treated as
 	// vacuously accepted and doesn't need to be voted on.
 
-	// Accept is called before notifying the IPC so that acceptances that
-	// cause fatal errors aren't sent to an IPC peer.
+	// Notify those listening for accepted txs
+	// Note that DecisionDispatcher.Accept must be called before
+	// tx.Accept to honor EventDispatcher.Accept's invariant.
+	if err := c.ctx.DecisionDispatcher.Accept(c.ctx, txID, bytes); err != nil {
+		return false, err
+	}
+
 	if err := tx.Accept(); err != nil {
 		return false, err
 	}
 
-	// Notify the IPC socket that this tx has been accepted.
-	c.ctx.DecisionDispatcher.Accept(c.ctx, txID, bytes)
-
-	// Notify the metrics that this transaction was just accepted.
-	c.metrics.Accepted(txID)
+	// Notify the metrics that this transaction was accepted.
+	c.Metrics.Accepted(txID)
 	return false, nil
 }
 
 // accept the provided tx.
 func (c *common) acceptTx(tx Tx) error {
-	// Accept is called before notifying the IPC so that acceptances that cause
-	// fatal errors aren't sent to an IPC peer.
+	txID := tx.ID()
+	// Notify those listening that this tx has been accepted.
+	// Note that DecisionDispatcher.Accept must be called before
+	// tx.Accept to honor EventDispatcher.Accept's invariant.
+	if err := c.ctx.DecisionDispatcher.Accept(c.ctx, txID, tx.Bytes()); err != nil {
+		return err
+	}
 	if err := tx.Accept(); err != nil {
 		return err
 	}
 
-	txID := tx.ID()
-
-	// Notify the IPC socket that this tx has been accepted.
-	c.ctx.DecisionDispatcher.Accept(c.ctx, txID, tx.Bytes())
-
 	// Update the metrics to account for this transaction's acceptance
-	c.metrics.Accepted(txID)
-
+	c.Metrics.Accepted(txID)
 	// If there is a tx that was accepted pending on this tx, the ancestor
 	// should be notified that it doesn't need to block on this tx anymore.
 	c.pendingAccept.Fulfill(txID)
 	// If there is a tx that was issued pending on this tx, the ancestor tx
 	// doesn't need to be rejected because of this tx.
 	c.pendingReject.Abandon(txID)
+
 	return nil
 }
 
@@ -164,10 +191,12 @@ func (c *common) rejectTx(tx Tx) error {
 	txID := tx.ID()
 
 	// Notify the IPC that the tx was rejected
-	c.ctx.DecisionDispatcher.Reject(c.ctx, txID, tx.Bytes())
+	if err := c.ctx.DecisionDispatcher.Reject(c.ctx, txID, tx.Bytes()); err != nil {
+		return err
+	}
 
 	// Update the metrics to account for this transaction's rejection
-	c.metrics.Rejected(txID)
+	c.Metrics.Rejected(txID)
 
 	// If there is a tx that was accepted pending on this tx, the ancestor
 	// tx can't be accepted.

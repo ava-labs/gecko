@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"gotest.tools/assert"
 
 	"github.com/ava-labs/avalanchego/database/memdb"
 	"github.com/ava-labs/avalanchego/ids"
@@ -41,6 +42,13 @@ func newConfig(t *testing.T) (Config, ids.ShortID, *common.SenderTest, *block.Te
 	sender.Default(true)
 	vm.Default(true)
 
+	isBootstrapped := false
+	subnet := &common.SubnetTest{
+		T:               t,
+		IsBootstrappedF: func() bool { return isBootstrapped },
+		BootstrappedF:   func(ids.ID) { isBootstrapped = true },
+	}
+
 	sender.CantGetAcceptedFrontier = false
 
 	peer := ids.GenerateTestShortID()
@@ -54,9 +62,11 @@ func newConfig(t *testing.T) (Config, ids.ShortID, *common.SenderTest, *block.Te
 		Ctx:        ctx,
 		Validators: peers,
 		Beacons:    peers,
-		SampleK:    int(peers.Weight()),
-		Alpha:      uint64(peers.Len()/2 + 1),
+		SampleK:    peers.Len(),
+		Alpha:      peers.Weight()/2 + 1,
 		Sender:     sender,
+		Subnet:     subnet,
+		Delay:      &common.DelayTest{},
 	}
 	return Config{
 		Config:  commonConfig,
@@ -91,6 +101,13 @@ func TestBootstrapperSingleFrontier(t *testing.T) {
 		ParentV: blk0,
 		HeightV: 1,
 		BytesV:  blkBytes1,
+	}
+
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blk0.ID(), nil }
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blk0.ID(), blkID)
+		return blk0, nil
 	}
 
 	finished := new(bool)
@@ -183,6 +200,13 @@ func TestBootstrapperUnknownByzantineResponse(t *testing.T) {
 		ParentV: blk1,
 		HeightV: 2,
 		BytesV:  blkBytes2,
+	}
+
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blk0.ID(), nil }
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blk0.ID(), blkID)
+		return blk0, nil
 	}
 
 	finished := new(bool)
@@ -333,6 +357,13 @@ func TestBootstrapperPartialFetch(t *testing.T) {
 		ParentV: blk2,
 		HeightV: 3,
 		BytesV:  blkBytes3,
+	}
+
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blk0.ID(), nil }
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blk0.ID(), blkID)
+		return blk0, nil
 	}
 
 	finished := new(bool)
@@ -489,7 +520,12 @@ func TestBootstrapperMultiPut(t *testing.T) {
 	}
 
 	vm.CantBootstrapping = false
-
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blk0.ID(), nil }
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blk0.ID(), blkID)
+		return blk0, nil
+	}
 	finished := new(bool)
 	bs := Bootstrapper{}
 	err := bs.Initialize(
@@ -590,6 +626,20 @@ func TestBootstrapperAcceptedFrontier(t *testing.T) {
 
 	blkID := ids.GenerateTestID()
 
+	dummyBlk := &snowman.TestBlock{
+		TestDecidable: choices.TestDecidable{
+			IDV:     blkID,
+			StatusV: choices.Accepted,
+		},
+		HeightV: 0,
+		BytesV:  []byte{1, 2, 3},
+	}
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blkID, nil }
+	vm.GetBlockF = func(bID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blkID, bID)
+		return dummyBlk, nil
+	}
 	bs := Bootstrapper{}
 	err := bs.Initialize(
 		config,
@@ -601,9 +651,10 @@ func TestBootstrapperAcceptedFrontier(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	vm.LastAcceptedF = func() ids.ID { return blkID }
-
-	accepted := bs.CurrentAcceptedFrontier()
+	accepted, err := bs.CurrentAcceptedFrontier()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(accepted) != 1 {
 		t.Fatalf("Only one block should be accepted")
@@ -629,6 +680,13 @@ func TestBootstrapperFilterAccepted(t *testing.T) {
 		StatusV: choices.Accepted,
 	}}
 
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blk1.ID(), nil }
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blk1.ID(), blkID)
+		return blk1, nil
+	}
+
 	bs := Bootstrapper{}
 	err := bs.Initialize(
 		config,
@@ -641,7 +699,6 @@ func TestBootstrapperFilterAccepted(t *testing.T) {
 	}
 
 	blkIDs := []ids.ID{blkID0, blkID1, blkID2}
-
 	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
 		switch blkID {
 		case blkID0:
@@ -714,6 +771,12 @@ func TestBootstrapperFinalized(t *testing.T) {
 
 	finished := new(bool)
 	bs := Bootstrapper{}
+	vm.CantLastAccepted = false
+	vm.LastAcceptedF = func() (ids.ID, error) { return blk0.ID(), nil }
+	vm.GetBlockF = func(blkID ids.ID) (snowman.Block, error) {
+		assert.Equal(t, blk0.ID(), blkID)
+		return blk0, nil
+	}
 	err := bs.Initialize(
 		config,
 		func() error { *finished = true; return nil },

@@ -24,6 +24,6 @@ func (p Parameters) Valid() error {
 	case p.BatchSize <= 0:
 		return fmt.Errorf("batchSize = %d: Fails the condition that: 0 < BatchSize", p.BatchSize)
 	default:
-		return p.Parameters.Valid()
+		return p.Parameters.Verify()
 	}
 }

@@ -12,6 +12,8 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
+	"github.com/ava-labs/avalanchego/api/keystore/gkeystore"
+	"github.com/ava-labs/avalanchego/api/keystore/gkeystore/gkeystoreproto"
 	"github.com/ava-labs/avalanchego/database/rpcdb"
 	"github.com/ava-labs/avalanchego/database/rpcdb/rpcdbproto"
 	"github.com/ava-labs/avalanchego/ids"
@@ -24,8 +26,6 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/galiaslookup/galiaslookupproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/ghttpproto"
-	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gkeystore"
-	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gkeystore/gkeystoreproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/grpcutils"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gsharedmemory"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gsharedmemory/gsharedmemoryproto"
@@ -34,6 +34,10 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/messenger"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/messenger/messengerproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/vmproto"
+)
+
+var (
+	_ vmproto.VMServer = &VMServer{}
 )
 
 // VMServer is a VM that is managed over RPC.
@@ -56,7 +60,6 @@ func NewServer(vm block.ChainVM, broker *plugin.GRPCBroker) *VMServer {
 	}
 }
 
-// Initialize ...
 func (vm *VMServer) Initialize(_ context.Context, req *vmproto.InitializeRequest) (*vmproto.InitializeResponse, error) {
 	subnetID, err := ids.ToID(req.SubnetID)
 	if err != nil {
@@ -177,24 +180,21 @@ func (vm *VMServer) Initialize(_ context.Context, req *vmproto.InitializeRequest
 	vm.conns = append(vm.conns, dbConn)
 	vm.conns = append(vm.conns, msgConn)
 	vm.toEngine = toEngine
-	lastAccepted := vm.vm.LastAccepted()
+	lastAccepted, err := vm.vm.LastAccepted()
 	return &vmproto.InitializeResponse{
 		LastAcceptedID: lastAccepted[:],
-	}, nil
+	}, err
 }
 
-// Bootstrapping ...
 func (vm *VMServer) Bootstrapping(context.Context, *vmproto.BootstrappingRequest) (*vmproto.BootstrappingResponse, error) {
 	return &vmproto.BootstrappingResponse{}, vm.vm.Bootstrapping()
 }
 
-// Bootstrapped ...
 func (vm *VMServer) Bootstrapped(context.Context, *vmproto.BootstrappedRequest) (*vmproto.BootstrappedResponse, error) {
 	vm.ctx.Bootstrapped()
 	return &vmproto.BootstrappedResponse{}, vm.vm.Bootstrapped()
 }
 
-// Shutdown ...
 func (vm *VMServer) Shutdown(context.Context, *vmproto.ShutdownRequest) (*vmproto.ShutdownResponse, error) {
 	if vm.toEngine == nil {
 		return &vmproto.ShutdownResponse{}, nil
@@ -212,9 +212,11 @@ func (vm *VMServer) Shutdown(context.Context, *vmproto.ShutdownRequest) (*vmprot
 	return &vmproto.ShutdownResponse{}, errs.Err
 }
 
-// CreateHandlers ...
 func (vm *VMServer) CreateHandlers(_ context.Context, req *vmproto.CreateHandlersRequest) (*vmproto.CreateHandlersResponse, error) {
-	handlers := vm.vm.CreateHandlers()
+	handlers, err := vm.vm.CreateHandlers()
+	if err != nil {
+		return nil, err
+	}
 	resp := &vmproto.CreateHandlersResponse{}
 	for prefix, h := range handlers {
 		handler := h
@@ -237,7 +239,6 @@ func (vm *VMServer) CreateHandlers(_ context.Context, req *vmproto.CreateHandler
 	return resp, nil
 }
 
-// BuildBlock ...
 func (vm *VMServer) BuildBlock(_ context.Context, _ *vmproto.BuildBlockRequest) (*vmproto.BuildBlockResponse, error) {
 	blk, err := vm.vm.BuildBlock()
 	if err != nil {
@@ -253,7 +254,6 @@ func (vm *VMServer) BuildBlock(_ context.Context, _ *vmproto.BuildBlockRequest) 
 	}, nil
 }
 
-// ParseBlock ...
 func (vm *VMServer) ParseBlock(_ context.Context, req *vmproto.ParseBlockRequest) (*vmproto.ParseBlockResponse, error) {
 	blk, err := vm.vm.ParseBlock(req.Bytes)
 	if err != nil {
@@ -269,7 +269,6 @@ func (vm *VMServer) ParseBlock(_ context.Context, req *vmproto.ParseBlockRequest
 	}, nil
 }
 
-// GetBlock ...
 func (vm *VMServer) GetBlock(_ context.Context, req *vmproto.GetBlockRequest) (*vmproto.GetBlockResponse, error) {
 	id, err := ids.ToID(req.Id)
 	if err != nil {
@@ -288,19 +287,16 @@ func (vm *VMServer) GetBlock(_ context.Context, req *vmproto.GetBlockRequest) (*
 	}, nil
 }
 
-// SetPreference ...
 func (vm *VMServer) SetPreference(_ context.Context, req *vmproto.SetPreferenceRequest) (*vmproto.SetPreferenceResponse, error) {
 	id, err := ids.ToID(req.Id)
 	if err != nil {
 		return nil, err
 	}
-	vm.vm.SetPreference(id)
-	return &vmproto.SetPreferenceResponse{}, nil
+	return &vmproto.SetPreferenceResponse{}, vm.vm.SetPreference(id)
 }
 
-// Health ...
 func (vm *VMServer) Health(_ context.Context, req *vmproto.HealthRequest) (*vmproto.HealthResponse, error) {
-	details, err := vm.vm.Health()
+	details, err := vm.vm.HealthCheck()
 	if err != nil {
 		return &vmproto.HealthResponse{}, err
 	}
@@ -326,7 +322,6 @@ func (vm *VMServer) Health(_ context.Context, req *vmproto.HealthRequest) (*vmpr
 	}, nil
 }
 
-// BlockVerify ...
 func (vm *VMServer) BlockVerify(_ context.Context, req *vmproto.BlockVerifyRequest) (*vmproto.BlockVerifyResponse, error) {
 	id, err := ids.ToID(req.Id)
 	if err != nil {
@@ -339,7 +334,6 @@ func (vm *VMServer) BlockVerify(_ context.Context, req *vmproto.BlockVerifyReque
 	return &vmproto.BlockVerifyResponse{}, blk.Verify()
 }
 
-// BlockAccept ...
 func (vm *VMServer) BlockAccept(_ context.Context, req *vmproto.BlockAcceptRequest) (*vmproto.BlockAcceptResponse, error) {
 	id, err := ids.ToID(req.Id)
 	if err != nil {
@@ -355,7 +349,6 @@ func (vm *VMServer) BlockAccept(_ context.Context, req *vmproto.BlockAcceptReque
 	return &vmproto.BlockAcceptResponse{}, nil
 }
 
-// BlockReject ...
 func (vm *VMServer) BlockReject(_ context.Context, req *vmproto.BlockRejectRequest) (*vmproto.BlockRejectResponse, error) {
 	id, err := ids.ToID(req.Id)
 	if err != nil {

@@ -10,7 +10,6 @@ import (
 )
 
 type metrics struct {
-	numRequests, numPendingRequests     prometheus.Gauge
 	numFetched, numDropped, numAccepted prometheus.Counter
 }
 
@@ -19,17 +18,6 @@ func (m *metrics) Initialize(
 	namespace string,
 	registerer prometheus.Registerer,
 ) error {
-	m.numRequests = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Name:      "requests",
-		Help:      "Number of outstanding bootstrap block requests",
-	})
-	m.numPendingRequests = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: namespace,
-		Name:      "pending_requests",
-		Help:      "Number of pending bootstrap block requests",
-	})
-
 	m.numFetched = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Name:      "fetched",
@@ -48,8 +36,6 @@ func (m *metrics) Initialize(
 
 	errs := wrappers.Errs{}
 	errs.Add(
-		registerer.Register(m.numRequests),
-		registerer.Register(m.numPendingRequests),
 		registerer.Register(m.numFetched),
 		registerer.Register(m.numDropped),
 		registerer.Register(m.numAccepted),

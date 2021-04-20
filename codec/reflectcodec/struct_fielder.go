@@ -21,7 +21,7 @@ const (
 
 type FieldDesc struct {
 	Index       int
-	MaxSliceLen int
+	MaxSliceLen uint32
 }
 
 // StructFielder handles discovery of serializable fields in a struct.
@@ -36,7 +36,7 @@ type StructFielder interface {
 	GetSerializedFields(t reflect.Type) ([]FieldDesc, error)
 }
 
-func NewStructFielder(tagName string, maxSliceLen int) StructFielder {
+func NewStructFielder(tagName string, maxSliceLen uint32) StructFielder {
 	return &structFielder{
 		tagName:                tagName,
 		maxSliceLen:            maxSliceLen,
@@ -47,7 +47,7 @@ func NewStructFielder(tagName string, maxSliceLen int) StructFielder {
 type structFielder struct {
 	lock        sync.Mutex
 	tagName     string
-	maxSliceLen int
+	maxSliceLen uint32
 
 	// Key: a struct type
 	// Value: Slice where each element is index in the struct type of a field
@@ -79,8 +79,9 @@ func (s *structFielder) GetSerializedFields(t reflect.Type) ([]FieldDesc, error)
 		}
 		sliceLenField := field.Tag.Get(SliceLenTagName)
 		maxSliceLen := s.maxSliceLen
-		if newLen, err := strconv.Atoi(sliceLenField); err == nil {
-			maxSliceLen = newLen
+
+		if newLen, err := strconv.ParseUint(sliceLenField, 10, 31); err == nil {
+			maxSliceLen = uint32(newLen)
 		}
 		serializedFields = append(serializedFields, FieldDesc{
 			Index:       i,

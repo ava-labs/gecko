@@ -1,7 +1,6 @@
 package json
 
 import (
-	"math"
 	"strconv"
 )
 
@@ -25,9 +24,6 @@ func (f *Float32) UnmarshalJSON(b []byte) error {
 		}
 	}
 	val, err := strconv.ParseFloat(str, 32)
-	if val > math.MaxUint32 {
-		return errTooLarge32
-	}
 	*f = Float32(val)
 	return err
 }

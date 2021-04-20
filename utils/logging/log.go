@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ava-labs/avalanchego/utils/constants"
+	"github.com/ava-labs/avalanchego/utils/perms"
 )
 
 var (
@@ -38,7 +39,7 @@ type Log struct {
 
 // New ...
 func New(config Config) (*Log, error) {
-	if err := os.MkdirAll(config.Directory, os.ModePerm); err != nil {
+	if err := os.MkdirAll(config.Directory, perms.ReadWriteExecute); err != nil {
 		return nil, err
 	}
 	l := &Log{
@@ -153,6 +154,8 @@ func (l *Log) log(level Level, format string, args ...interface{}) {
 	if !shouldLog && !shouldDisplay {
 		return
 	}
+
+	args = SanitizeArgs(args)
 
 	output := l.format(level, format, args...)
 
@@ -360,7 +363,7 @@ func (fw *fileWriter) Close() error {
 
 func (fw *fileWriter) Rotate() error {
 	fw.fileIndex = (fw.fileIndex + 1) % fw.config.RotationSize
-	writer, file, err := fw.create(fw.fileIndex)
+	writer, file, err := fw.create()
 	if err != nil {
 		return err
 	}
@@ -369,9 +372,9 @@ func (fw *fileWriter) Rotate() error {
 	return nil
 }
 
-func (fw *fileWriter) create(fileIndex int) (*bufio.Writer, *os.File, error) {
+func (fw *fileWriter) create() (*bufio.Writer, *os.File, error) {
 	filename := filepath.Join(fw.config.Directory, fmt.Sprintf("%d.log", fw.fileIndex))
-	file, err := os.Create(filename)
+	file, err := perms.Create(filename, perms.ReadWrite)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -381,7 +384,7 @@ func (fw *fileWriter) create(fileIndex int) (*bufio.Writer, *os.File, error) {
 
 func (fw *fileWriter) Initialize(config Config) error {
 	fw.config = config
-	writer, file, err := fw.create(fw.fileIndex)
+	writer, file, err := fw.create()
 	if err != nil {
 		return err
 	}

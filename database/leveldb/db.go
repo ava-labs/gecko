@@ -15,20 +15,25 @@ import (
 
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/utils"
+	"github.com/ava-labs/avalanchego/utils/logging"
 )
 
 const (
 	// minBlockCacheSize is the minimum number of bytes to use for block caching
 	// in leveldb.
-	minBlockCacheSize = 8 * opt.MiB
+	minBlockCacheSize = 12 * opt.MiB
 
 	// minWriteBufferSize is the minimum number of bytes to use for buffers in
 	// leveldb.
-	minWriteBufferSize = 8 * opt.MiB
+	minWriteBufferSize = 12 * opt.MiB
 
 	// minHandleCap is the minimum number of files descriptors to cap levelDB to
 	// use
-	minHandleCap = 16
+	minHandleCap = 64
+
+	// levelDBByteOverhead is the number of bytes of constant overhead that
+	// should be added to a batch size per operation.
+	levelDBByteOverhead = 8
 )
 
 // Database is a persistent key-value store. Apart from basic data storage
@@ -36,6 +41,7 @@ const (
 // in binary-alphabetical order.
 type Database struct {
 	*leveldb.DB
+	log logging.Logger
 
 	// True if there was previously an error other than "not found" or "closed"
 	// while performing a db operation. If [errored] == true, Has, Get, Put,
@@ -45,7 +51,7 @@ type Database struct {
 }
 
 // New returns a wrapped LevelDB object.
-func New(file string, blockCacheSize, writeBufferSize, handleCap int) (*Database, error) {
+func New(file string, log logging.Logger, blockCacheSize, writeBufferSize, handleCap int) (*Database, error) {
 	// Enforce minimums
 	if blockCacheSize < minBlockCacheSize {
 		blockCacheSize = minBlockCacheSize
@@ -71,7 +77,10 @@ func New(file string, blockCacheSize, writeBufferSize, handleCap int) (*Database
 	if err != nil {
 		return nil, err
 	}
-	return &Database{DB: db}, nil
+	return &Database{
+		DB:  db,
+		log: log,
+	}, nil
 }
 
 // Has returns if the key is set in the database
@@ -169,6 +178,7 @@ func (db *Database) handleError(err error) error {
 	// If we get an error other than "not found" or "closed", disallow future
 	// database operations to avoid possible corruption
 	if err != nil && err != database.ErrNotFound && err != database.ErrClosed {
+		db.log.Fatal("leveldb error: %w", err)
 		db.errored = true
 	}
 	return err
@@ -184,19 +194,19 @@ type batch struct {
 // Put the value into the batch for later writing
 func (b *batch) Put(key, value []byte) error {
 	b.Batch.Put(key, value)
-	b.size += len(value)
+	b.size += len(key) + len(value) + levelDBByteOverhead
 	return nil
 }
 
 // Delete the key during writing
 func (b *batch) Delete(key []byte) error {
 	b.Batch.Delete(key)
-	b.size++
+	b.size += len(key) + levelDBByteOverhead
 	return nil
 }
 
-// ValueSize retrieves the amount of data queued up for writing.
-func (b *batch) ValueSize() int { return b.size }
+// Size retrieves the amount of data queued up for writing.
+func (b *batch) Size() int { return b.size }
 
 // Write flushes any accumulated data to disk.
 func (b *batch) Write() error {

@@ -6,11 +6,17 @@ package rpcchainvm
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"google.golang.org/grpc"
 
 	"github.com/hashicorp/go-plugin"
+	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/ava-labs/avalanchego/api/keystore/gkeystore"
+	"github.com/ava-labs/avalanchego/api/keystore/gkeystore/gkeystoreproto"
+	"github.com/ava-labs/avalanchego/cache"
+	"github.com/ava-labs/avalanchego/cache/metercacher"
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/database/rpcdb"
 	"github.com/ava-labs/avalanchego/database/rpcdb/rpcdbproto"
@@ -19,14 +25,13 @@ import (
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/snow/consensus/snowman"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
+	"github.com/ava-labs/avalanchego/snow/engine/snowman/block"
 	"github.com/ava-labs/avalanchego/utils/wrappers"
 	"github.com/ava-labs/avalanchego/vms/components/missing"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/galiaslookup"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/galiaslookup/galiaslookupproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/ghttpproto"
-	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gkeystore"
-	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gkeystore/gkeystoreproto"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/grpcutils"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gsharedmemory"
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gsharedmemory/gsharedmemoryproto"
@@ -39,6 +44,12 @@ import (
 
 var (
 	errUnsupportedFXs = errors.New("unsupported feature extensions")
+
+	_ block.ChainVM = &VMClient{}
+)
+
+const (
+	decidedCacheSize = 500
 )
 
 // VMClient is an implementation of VM that talks over RPC.
@@ -60,10 +71,12 @@ type VMClient struct {
 	ctx  *snow.Context
 	blks map[ids.ID]*BlockClient
 
+	decidedBlocks cache.Cacher
+
 	lastAccepted ids.ID
 }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns a VM connected to a remote VM
 func NewClient(client vmproto.VMClient, broker *plugin.GRPCBroker) *VMClient {
 	return &VMClient{
 		client: client,
@@ -72,12 +85,28 @@ func NewClient(client vmproto.VMClient, broker *plugin.GRPCBroker) *VMClient {
 	}
 }
 
-// SetProcess ...
+// SetProcess gives ownership of the server process to the client.
 func (vm *VMClient) SetProcess(proc *plugin.Client) {
 	vm.proc = proc
 }
 
-// Initialize ...
+// initializeCaches creates a new [decidedBlocks] and [missingBlocks] cache. It
+// wraps these caches in metercacher so that we can get prometheus metrics
+// about their performance.
+func (vm *VMClient) initializeCaches(registerer prometheus.Registerer, namespace string) error {
+	decidedCache, err := metercacher.New(
+		fmt.Sprintf("%s_rpcchainvm_decided_cache", namespace),
+		registerer,
+		&cache.LRU{Size: decidedCacheSize},
+	)
+	if err != nil {
+		return fmt.Errorf("could not initialize decided blocks cache: %w", err)
+	}
+	vm.decidedBlocks = decidedCache
+
+	return nil
+}
+
 func (vm *VMClient) Initialize(
 	ctx *snow.Context,
 	db database.Database,
@@ -102,6 +131,10 @@ func (vm *VMClient) Initialize(
 	vm.sharedMemory = gsharedmemory.NewServer(ctx.SharedMemory, db)
 	vm.bcLookup = galiaslookup.NewServer(ctx.BCLookup)
 	vm.snLookup = gsubnetlookup.NewServer(ctx.SNLookup)
+
+	if err := vm.initializeCaches(ctx.Metrics, ctx.Namespace); err != nil {
+		return err
+	}
 
 	// start the db server
 	dbBrokerID := vm.broker.NextId()
@@ -199,19 +232,16 @@ func (vm *VMClient) startSNLookupServer(opts []grpc.ServerOption) *grpc.Server {
 	return server
 }
 
-// Bootstrapping ...
 func (vm *VMClient) Bootstrapping() error {
 	_, err := vm.client.Bootstrapping(context.Background(), &vmproto.BootstrappingRequest{})
 	return err
 }
 
-// Bootstrapped ...
 func (vm *VMClient) Bootstrapped() error {
 	_, err := vm.client.Bootstrapped(context.Background(), &vmproto.BootstrappedRequest{})
 	return err
 }
 
-// Shutdown ...
 func (vm *VMClient) Shutdown() error {
 	errs := wrappers.Errs{}
 	_, err := vm.client.Shutdown(context.Background(), &vmproto.ShutdownRequest{})
@@ -226,15 +256,18 @@ func (vm *VMClient) Shutdown() error {
 	return errs.Err
 }
 
-// CreateHandlers ...
-func (vm *VMClient) CreateHandlers() map[string]*common.HTTPHandler {
+func (vm *VMClient) CreateHandlers() (map[string]*common.HTTPHandler, error) {
 	resp, err := vm.client.CreateHandlers(context.Background(), &vmproto.CreateHandlersRequest{})
-	vm.ctx.Log.AssertNoError(err)
+	if err != nil {
+		return nil, err
+	}
 
 	handlers := make(map[string]*common.HTTPHandler, len(resp.Handlers))
 	for _, handler := range resp.Handlers {
 		conn, err := vm.broker.Dial(handler.Server)
-		vm.ctx.Log.AssertNoError(err)
+		if err != nil {
+			return nil, err
+		}
 
 		vm.conns = append(vm.conns, conn)
 		handlers[handler.Prefix] = &common.HTTPHandler{
@@ -242,10 +275,9 @@ func (vm *VMClient) CreateHandlers() map[string]*common.HTTPHandler {
 			Handler:     ghttp.NewClient(ghttpproto.NewHTTPClient(conn), vm.broker),
 		}
 	}
-	return handlers
+	return handlers, nil
 }
 
-// BuildBlock ...
 func (vm *VMClient) BuildBlock() (snowman.Block, error) {
 	resp, err := vm.client.BuildBlock(context.Background(), &vmproto.BuildBlockRequest{})
 	if err != nil {
@@ -254,6 +286,7 @@ func (vm *VMClient) BuildBlock() (snowman.Block, error) {
 
 	id, err := ids.ToID(resp.Id)
 	vm.ctx.Log.AssertNoError(err)
+
 	parentID, err := ids.ToID(resp.ParentID)
 	vm.ctx.Log.AssertNoError(err)
 
@@ -267,7 +300,6 @@ func (vm *VMClient) BuildBlock() (snowman.Block, error) {
 	}, nil
 }
 
-// ParseBlock ...
 func (vm *VMClient) ParseBlock(bytes []byte) (snowman.Block, error) {
 	resp, err := vm.client.ParseBlock(context.Background(), &vmproto.ParseBlockRequest{
 		Bytes: bytes,
@@ -282,26 +314,37 @@ func (vm *VMClient) ParseBlock(bytes []byte) (snowman.Block, error) {
 	if blk, cached := vm.blks[id]; cached {
 		return blk, nil
 	}
+	if blkIntf, cached := vm.decidedBlocks.Get(id); cached {
+		return blkIntf.(*BlockClient), nil
+	}
 
 	parentID, err := ids.ToID(resp.ParentID)
 	vm.ctx.Log.AssertNoError(err)
+
 	status := choices.Status(resp.Status)
 	vm.ctx.Log.AssertDeferredNoError(status.Valid)
 
-	return &BlockClient{
+	blk := &BlockClient{
 		vm:       vm,
 		id:       id,
 		parentID: parentID,
 		status:   status,
 		bytes:    bytes,
 		height:   resp.Height,
-	}, nil
+	}
+
+	if status.Decided() {
+		vm.decidedBlocks.Put(id, blk)
+	}
+	return blk, nil
 }
 
-// GetBlock ...
 func (vm *VMClient) GetBlock(id ids.ID) (snowman.Block, error) {
 	if blk, cached := vm.blks[id]; cached {
 		return blk, nil
+	}
+	if blkIntf, cached := vm.decidedBlocks.Get(id); cached {
+		return blkIntf.(*BlockClient), nil
 	}
 
 	resp, err := vm.client.GetBlock(context.Background(), &vmproto.GetBlockRequest{
@@ -316,29 +359,31 @@ func (vm *VMClient) GetBlock(id ids.ID) (snowman.Block, error) {
 	status := choices.Status(resp.Status)
 	vm.ctx.Log.AssertDeferredNoError(status.Valid)
 
-	return &BlockClient{
+	blk := &BlockClient{
 		vm:       vm,
 		id:       id,
 		parentID: parentID,
 		status:   status,
 		bytes:    resp.Bytes,
 		height:   resp.Height,
-	}, nil
+	}
+
+	if status.Decided() {
+		vm.decidedBlocks.Put(id, blk)
+	}
+	return blk, nil
 }
 
-// SetPreference ...
-func (vm *VMClient) SetPreference(id ids.ID) {
+func (vm *VMClient) SetPreference(id ids.ID) error {
 	_, err := vm.client.SetPreference(context.Background(), &vmproto.SetPreferenceRequest{
 		Id: id[:],
 	})
-	vm.ctx.Log.AssertNoError(err)
+	return err
 }
 
-// LastAccepted ...
-func (vm *VMClient) LastAccepted() ids.ID { return vm.lastAccepted }
+func (vm *VMClient) LastAccepted() (ids.ID, error) { return vm.lastAccepted, nil }
 
-// Health ...
-func (vm *VMClient) Health() (interface{}, error) {
+func (vm *VMClient) HealthCheck() (interface{}, error) {
 	return vm.client.Health(
 		context.Background(),
 		&vmproto.HealthRequest{},
@@ -356,10 +401,8 @@ type BlockClient struct {
 	height   uint64
 }
 
-// ID ...
 func (b *BlockClient) ID() ids.ID { return b.id }
 
-// Accept ...
 func (b *BlockClient) Accept() error {
 	delete(b.vm.blks, b.id)
 	b.status = choices.Accepted
@@ -370,24 +413,24 @@ func (b *BlockClient) Accept() error {
 		return err
 	}
 
+	b.vm.decidedBlocks.Put(b.id, b)
 	b.vm.lastAccepted = b.id
 	return nil
 }
 
-// Reject ...
 func (b *BlockClient) Reject() error {
 	delete(b.vm.blks, b.id)
 	b.status = choices.Rejected
 	_, err := b.vm.client.BlockReject(context.Background(), &vmproto.BlockRejectRequest{
 		Id: b.id[:],
 	})
+
+	b.vm.decidedBlocks.Put(b.id, b)
 	return err
 }
 
-// Status ...
 func (b *BlockClient) Status() choices.Status { return b.status }
 
-// Parent ...
 func (b *BlockClient) Parent() snowman.Block {
 	if parent, err := b.vm.GetBlock(b.parentID); err == nil {
 		return parent
@@ -395,7 +438,6 @@ func (b *BlockClient) Parent() snowman.Block {
 	return &missing.Block{BlkID: b.parentID}
 }
 
-// Verify ...
 func (b *BlockClient) Verify() error {
 	_, err := b.vm.client.BlockVerify(context.Background(), &vmproto.BlockVerifyRequest{
 		Id: b.id[:],
@@ -408,8 +450,5 @@ func (b *BlockClient) Verify() error {
 	return nil
 }
 
-// Bytes ...
-func (b *BlockClient) Bytes() []byte { return b.bytes }
-
-// Height ...
+func (b *BlockClient) Bytes() []byte  { return b.bytes }
 func (b *BlockClient) Height() uint64 { return b.height }

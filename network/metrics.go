@@ -13,43 +13,55 @@ import (
 )
 
 type messageMetrics struct {
-	numSent, numFailed, numReceived prometheus.Counter
+	receivedBytes, sentBytes, numSent, numFailed, numReceived prometheus.Counter
 }
 
 func (mm *messageMetrics) initialize(msgType Op, registerer prometheus.Registerer) error {
 	mm.numSent = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: constants.PlatformName,
 		Name:      fmt.Sprintf("%s_sent", msgType),
-		Help:      fmt.Sprintf("Number of %s messages sent", msgType),
+		Help:      fmt.Sprintf("Number of %s messages sent over the network", msgType),
 	})
 	mm.numFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: constants.PlatformName,
 		Name:      fmt.Sprintf("%s_failed", msgType),
-		Help:      fmt.Sprintf("Number of %s messages that failed to be sent", msgType),
+		Help:      fmt.Sprintf("Number of %s messages that failed to be sent over the network", msgType),
 	})
 	mm.numReceived = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: constants.PlatformName,
 		Name:      fmt.Sprintf("%s_received", msgType),
-		Help:      fmt.Sprintf("Number of %s messages received", msgType),
+		Help:      fmt.Sprintf("Number of %s messages received from the network", msgType),
 	})
 
-	if err := registerer.Register(mm.numSent); err != nil {
-		return fmt.Errorf("failed to register sent statistics of %s due to %s",
-			msgType, err)
-	}
-	if err := registerer.Register(mm.numFailed); err != nil {
-		return fmt.Errorf("failed to register failed statistics of %s due to %s",
-			msgType, err)
-	}
-	if err := registerer.Register(mm.numReceived); err != nil {
-		return fmt.Errorf("failed to register received statistics of %s due to %s",
-			msgType, err)
-	}
-	return nil
+	mm.receivedBytes = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: constants.PlatformName,
+		Name:      fmt.Sprintf("%s_received_bytes", msgType),
+		Help:      fmt.Sprintf("Number of bytes of %s messages received from the network", msgType),
+	})
+	mm.sentBytes = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: constants.PlatformName,
+		Name:      fmt.Sprintf("%s_sent_bytes", msgType),
+		Help:      fmt.Sprintf("Size of bytes of %s messages received from the network", msgType),
+	})
+
+	errs := wrappers.Errs{}
+	errs.Add(
+		registerer.Register(mm.numSent),
+		registerer.Register(mm.numFailed),
+		registerer.Register(mm.numReceived),
+		registerer.Register(mm.receivedBytes),
+		registerer.Register(mm.sentBytes),
+	)
+
+	return errs.Err
 }
 
 type metrics struct {
-	numPeers prometheus.Gauge
+	numPeers                 prometheus.Gauge
+	timeSinceLastMsgSent     prometheus.Gauge
+	timeSinceLastMsgReceived prometheus.Gauge
+	sendQueuePortionFull     prometheus.Gauge
+	sendFailRate             prometheus.Gauge
 
 	getVersion, version,
 	getPeerlist, peerlist,
@@ -61,18 +73,41 @@ type metrics struct {
 }
 
 func (m *metrics) initialize(registerer prometheus.Registerer) error {
+	// Set up metrics
 	m.numPeers = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: constants.PlatformName,
 		Name:      "peers",
 		Help:      "Number of network peers",
 	})
+	m.timeSinceLastMsgReceived = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: constants.PlatformName,
+		Name:      "time_since_last_msg_received",
+		Help:      "Time since the last msg was received in milliseconds",
+	})
+	m.timeSinceLastMsgSent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: constants.PlatformName,
+		Name:      "time_since_last_msg_sent",
+		Help:      "Time since the last msg was sent in milliseconds",
+	})
+	m.sendQueuePortionFull = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: constants.PlatformName,
+		Name:      "send_queue_portion_full",
+		Help:      "Percentage of use in Send Queue",
+	})
+	m.sendFailRate = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: constants.PlatformName,
+		Name:      "send_fail_rate",
+		Help:      "Portion of messages that recently failed to be sent over the network",
+	})
 
 	errs := wrappers.Errs{}
-	if err := registerer.Register(m.numPeers); err != nil {
-		errs.Add(fmt.Errorf("failed to register peers statistics due to %s",
-			err))
-	}
 	errs.Add(
+		registerer.Register(m.numPeers),
+		registerer.Register(m.timeSinceLastMsgReceived),
+		registerer.Register(m.timeSinceLastMsgSent),
+		registerer.Register(m.sendQueuePortionFull),
+		registerer.Register(m.sendFailRate),
+
 		m.getVersion.initialize(GetVersion, registerer),
 		m.version.initialize(Version, registerer),
 		m.getPeerlist.initialize(GetPeerList, registerer),

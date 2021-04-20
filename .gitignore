@@ -53,3 +53,4 @@ keys/staker.*
 plugins/
 
 scripts/ansible/*inventory.yml
+scripts/.build_image_gopath/

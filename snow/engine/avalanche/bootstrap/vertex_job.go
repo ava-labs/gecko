@@ -24,7 +24,7 @@ type vtxParser struct {
 }
 
 func (p *vtxParser) Parse(vtxBytes []byte) (queue.Job, error) {
-	vtx, err := p.manager.Parse(vtxBytes)
+	vtx, err := p.manager.ParseVtx(vtxBytes)
 	if err != nil {
 		return nil, err
 	}

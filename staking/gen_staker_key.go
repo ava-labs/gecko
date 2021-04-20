@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ava-labs/avalanchego/utils/perms"
 )
 
 // GenerateStakingKeyCert generates a self-signed TLS key/cert pair to use in staking
@@ -41,9 +43,10 @@ func GenerateStakingKeyCert(keyPath, certPath string) error {
 	}
 
 	// Ensure directory where key/cert will live exist
-	if err := os.MkdirAll(filepath.Dir(certPath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(certPath), perms.ReadWriteExecute); err != nil {
 		return fmt.Errorf("couldn't create path for cert: %w", err)
-	} else if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
+	}
+	if err := os.MkdirAll(filepath.Dir(keyPath), perms.ReadWriteExecute); err != nil {
 		return fmt.Errorf("couldn't create path for key: %w", err)
 	}
 
@@ -58,7 +61,7 @@ func GenerateStakingKeyCert(keyPath, certPath string) error {
 	if err := certFile.Close(); err != nil {
 		return fmt.Errorf("couldn't close cert file: %w", err)
 	}
-	if err := os.Chmod(certPath, 0400); err != nil { // Make cert read-only
+	if err := os.Chmod(certPath, perms.ReadOnly); err != nil { // Make cert read-only
 		return fmt.Errorf("couldn't change permissions on cert: %w", err)
 	}
 
@@ -77,7 +80,7 @@ func GenerateStakingKeyCert(keyPath, certPath string) error {
 	if err := keyOut.Close(); err != nil {
 		return fmt.Errorf("couldn't close key file: %w", err)
 	}
-	if err := os.Chmod(keyPath, 0400); err != nil { // Make key read-only
+	if err := os.Chmod(keyPath, perms.ReadOnly); err != nil { // Make key read-only
 		return fmt.Errorf("couldn't change permissions on key")
 	}
 

@@ -4,13 +4,7 @@
 package json
 
 import (
-	"errors"
-	"math"
 	"strconv"
-)
-
-var (
-	errTooLarge8 = errors.New("value overflowed uint8")
 )
 
 // Uint8 ...
@@ -32,10 +26,7 @@ func (u *Uint8) UnmarshalJSON(b []byte) error {
 			str = str[1:lastIndex]
 		}
 	}
-	val, err := strconv.ParseUint(str, 10, 0)
-	if val > math.MaxUint8 {
-		return errTooLarge8
-	}
+	val, err := strconv.ParseUint(str, 10, 8)
 	*u = Uint8(val)
 	return err
 }

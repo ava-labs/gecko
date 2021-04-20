@@ -3,5 +3,6 @@
   with_first_found:
     - "{{ ansible_facts.distribution | lower }}-{{ ansible_facts.distribution_version }}.yml"
     - "{{ ansible_facts.distribution | lower }}-{{ ansible_facts.distribution_major_version }}.yml"
+    - "not_supported.yml"
   tags:
     - golang_base

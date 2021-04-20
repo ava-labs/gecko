@@ -20,12 +20,15 @@ func TestConflictGraphEquality(t *testing.T) {
 	maxInputConflicts := 2
 	numNodes := 100
 	params := sbcon.Parameters{
-		Metrics:           prometheus.NewRegistry(),
-		K:                 20,
-		Alpha:             11,
-		BetaVirtuous:      20,
-		BetaRogue:         30,
-		ConcurrentRepolls: 1,
+		Metrics:               prometheus.NewRegistry(),
+		K:                     20,
+		Alpha:                 11,
+		BetaVirtuous:          20,
+		BetaRogue:             30,
+		ConcurrentRepolls:     1,
+		OptimalProcessing:     1,
+		MaxOutstandingItems:   1,
+		MaxItemProcessingTime: 1,
 	}
 	seed := int64(0)
 

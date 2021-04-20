@@ -16,6 +16,7 @@ type convincer struct {
 	sender    common.Sender
 	vdr       ids.ShortID
 	requestID uint32
+	sent      bool
 	abandoned bool
 	deps      ids.Set
 	errs      *wrappers.Errs
@@ -30,12 +31,16 @@ func (c *convincer) Fulfill(id ids.ID) {
 }
 
 // Abandon this attempt to send chits.
-func (c *convincer) Abandon(ids.ID) { c.abandoned = true }
+func (c *convincer) Abandon(ids.ID) {
+	c.abandoned = true
+	c.Update()
+}
 
 func (c *convincer) Update() {
-	if c.abandoned || c.deps.Len() != 0 || c.errs.Errored() {
+	if c.sent || c.errs.Errored() || (!c.abandoned && c.deps.Len() != 0) {
 		return
 	}
+	c.sent = true
 
 	c.sender.Chits(c.vdr, c.requestID, c.consensus.Preferences().List())
 }

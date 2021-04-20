@@ -35,16 +35,16 @@ type Plugin struct {
 	vm block.ChainVM
 }
 
-// New ...
+// New creates a new plugin from the provided VM
 func New(vm block.ChainVM) *Plugin { return &Plugin{vm: vm} }
 
-// GRPCServer ...
+// GRPCServer registers a new GRPC server.
 func (p *Plugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
 	vmproto.RegisterVMServer(s, NewServer(p.vm, broker))
 	return nil
 }
 
-// GRPCClient ...
+// GRPCClient returns a new GRPC client
 func (p *Plugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
 	return NewClient(vmproto.NewVMClient(c), broker), nil
 }

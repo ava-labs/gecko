@@ -8,6 +8,8 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+
+	"github.com/ava-labs/avalanchego/utils/perms"
 )
 
 const (
@@ -26,7 +28,20 @@ var (
 
 // Performance provides helper methods for measuring the current performance of
 // the system
-type Performance struct{ cpuProfileFile *os.File }
+type Performance struct {
+	cpuProfileName, memProfileName, lockProfileName string
+	cpuProfileFile                                  *os.File
+}
+
+func NewPerformanceService(prefix string) *Performance {
+	return &Performance{
+		cpuProfileName:  prefix + cpuProfileFile,
+		memProfileName:  prefix + memProfileFile,
+		lockProfileName: prefix + lockProfileFile,
+	}
+}
+
+func NewDefaultPerformanceService() *Performance { return NewPerformanceService("") }
 
 // StartCPUProfiler starts measuring the cpu utilization of this node
 func (p *Performance) StartCPUProfiler() error {
@@ -34,7 +49,7 @@ func (p *Performance) StartCPUProfiler() error {
 		return errCPUProfilerRunning
 	}
 
-	file, err := os.Create(cpuProfileFile)
+	file, err := perms.Create(p.cpuProfileName, perms.ReadWrite)
 	if err != nil {
 		return err
 	}
@@ -62,7 +77,7 @@ func (p *Performance) StopCPUProfiler() error {
 
 // MemoryProfile dumps the current memory utilization of this node
 func (p *Performance) MemoryProfile() error {
-	file, err := os.Create(memProfileFile)
+	file, err := perms.Create(p.memProfileName, perms.ReadWrite)
 	if err != nil {
 		return err
 	}
@@ -76,7 +91,7 @@ func (p *Performance) MemoryProfile() error {
 
 // LockProfile dumps the current lock statistics of this node
 func (p *Performance) LockProfile() error {
-	file, err := os.Create(lockProfileFile)
+	file, err := perms.Create(p.lockProfileName, perms.ReadWrite)
 	if err != nil {
 		return err
 	}

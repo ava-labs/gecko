@@ -1,0 +1,11 @@
+#!/usr/bin/env ansible-playbook
+---
+- name: Update the network
+  connection: ssh
+  hosts: all
+  roles:
+    - name: avalanche_stop
+    - name: avalanche_build
+    - name: coreth_build
+    - name: avalanche_reset
+    - name: avalanche_start

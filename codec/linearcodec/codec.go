@@ -36,7 +36,7 @@ type linearCodec struct {
 }
 
 // New returns a new, concurrency-safe codec
-func New(tagName string, maxSliceLen int) Codec {
+func New(tagName string, maxSliceLen uint32) Codec {
 	hCodec := &linearCodec{
 		nextTypeID:   0,
 		typeIDToType: map[uint32]reflect.Type{},

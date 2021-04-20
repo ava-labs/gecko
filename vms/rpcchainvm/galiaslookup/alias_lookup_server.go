@@ -11,17 +11,20 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/galiaslookup/galiaslookupproto"
 )
 
-// Server is a messenger that is managed over RPC.
+var (
+	_ galiaslookupproto.AliasLookupServer = &Server{}
+)
+
+// Server enables alias lookups over RPC.
 type Server struct {
 	aliaser snow.AliasLookup
 }
 
-// NewServer returns a vm instance connected to a remote vm instance
+// NewServer returns an alias lookup connected to a remote alias lookup
 func NewServer(aliaser snow.AliasLookup) *Server {
 	return &Server{aliaser: aliaser}
 }
 
-// Lookup ...
 func (s *Server) Lookup(
 	_ context.Context,
 	req *galiaslookupproto.LookupRequest,
@@ -35,7 +38,6 @@ func (s *Server) Lookup(
 	}, nil
 }
 
-// PrimaryAlias ...
 func (s *Server) PrimaryAlias(
 	_ context.Context,
 	req *galiaslookupproto.PrimaryAliasRequest,

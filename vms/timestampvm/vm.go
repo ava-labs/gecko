@@ -28,7 +28,8 @@ var (
 	errNoPendingBlocks = errors.New("there is no block to propose")
 	errBadGenesisBytes = errors.New("genesis data should be bytes (max length 32)")
 
-	_ block.ChainVM = &VM{}
+	_ block.ChainVM   = &VM{}
+	_ common.StaticVM = &VM{}
 )
 
 // VM implements the snowman.VM interface
@@ -111,22 +112,21 @@ func (vm *VM) Initialize(
 // CreateHandlers returns a map where:
 // Keys: The path extension for this VM's API (empty in this case)
 // Values: The handler for the API
-func (vm *VM) CreateHandlers() map[string]*common.HTTPHandler {
+func (vm *VM) CreateHandlers() (map[string]*common.HTTPHandler, error) {
 	handler, err := vm.NewHandler("timestamp", &Service{vm})
-	vm.Ctx.Log.AssertNoError(err)
 	return map[string]*common.HTTPHandler{
 		"": handler,
-	}
+	}, err
 }
 
 // CreateStaticHandlers returns a map where:
 // Keys: The path extension for this VM's static API
 // Values: The handler for that static API
 // We return nil because this VM has no static API
-func (vm *VM) CreateStaticHandlers() map[string]*common.HTTPHandler { return nil }
+func (vm *VM) CreateStaticHandlers() (map[string]*common.HTTPHandler, error) { return nil, nil }
 
 // Health implements the common.VM interface
-func (vm *VM) Health() (interface{}, error) { return nil, nil }
+func (vm *VM) HealthCheck() (interface{}, error) { return nil, nil }
 
 // BuildBlock returns a block that this vm wants to add to consensus
 func (vm *VM) BuildBlock() (snowman.Block, error) {

@@ -1,7 +1,28 @@
+# CentOS Linux 8.x has periodic minor releases, each one has a Go release.
+# CentOS Stream 8 is a rolling release, Go is updated on a continuous basis.
+
+- name: Add Go repository
+  # Typically the version of Go in CentOS Linux will be too old. So use the
+  # CentOS Stream AppStream repository, but but only for Go packages.
+  yum_repository:
+    name: centos-stream-appstream
+    description: CentOS Stream $releasever - AppStream
+    mirrorlist: http://mirrorlist.centos.org/?release=8-stream&arch=$basearch&repo=AppStream&infra=$infra
+    gpgcheck: true
+    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial
+    file: CentOS-Stream-AppStream  # .repo extension is added by Ansible
+    includepkgs: golang*
+  # Only run on CentOS Linux. CentOS Stream already has this repo configured.
+  # On CentOS Linux distribution_version is "<major>.<minor>".
+  # On CentOS Stream distribution_version is just "<major>".
+  when: (ansible_facts.distribution_version | length) >= 3
+  tags:
+    - golang_base
+
 - name: Install Go
   become: true
   yum:
     name:
-      - golang  # 1.13.4 in July 2020
+      - "golang >= {{ golang_version_min }}"
   tags:
     - golang_base

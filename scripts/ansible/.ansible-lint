@@ -1,7 +1,3 @@
 parsable: true
-skip_list:
-  - '301'  # Commands should not change things if nothing needs doing
-  - '204'  # Lines should be no longer than 160 chars
-  - '502'  # All tasks should be named
 
 # vim: filetype=yaml

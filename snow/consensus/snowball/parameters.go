@@ -5,6 +5,7 @@ package snowball
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -18,7 +19,7 @@ const (
 		` |______  / |__|  (____  /\____ |/ ____|` + "\n" +
 		`        \/             \/      \/\/` + "\n" +
 		"\n" +
-		`🏆      🏆      🏆     🏆      🏆      🏆` + "\n" +
+		`  🏆    🏆    🏆    🏆    🏆    🏆    🏆` + "\n" +
 		`  ________ ________      ________________` + "\n" +
 		` /  _____/ \_____  \    /  _  \__    ___/` + "\n" +
 		`/   \  ___  /   |   \  /  /_\  \|    |` + "\n" +
@@ -29,13 +30,20 @@ const (
 
 // Parameters required for snowball consensus
 type Parameters struct {
-	Namespace                                            string
-	Metrics                                              prometheus.Registerer
-	K, Alpha, BetaVirtuous, BetaRogue, ConcurrentRepolls int
+	Namespace                                                               string
+	Metrics                                                                 prometheus.Registerer
+	K, Alpha, BetaVirtuous, BetaRogue, ConcurrentRepolls, OptimalProcessing int
+
+	// Reports unhealthy if more than this number of items are outstanding.
+	MaxOutstandingItems int
+
+	// Reports unhealthy if there is an item processing for longer than this
+	// duration.
+	MaxItemProcessingTime time.Duration
 }
 
-// Valid returns nil if the parameters describe a valid initialization.
-func (p Parameters) Valid() error {
+// Verify returns nil if the parameters describe a valid initialization.
+func (p Parameters) Verify() error {
 	switch {
 	case p.Alpha <= p.K/2:
 		return fmt.Errorf("K = %d, Alpha = %d: Fails the condition that: K/2 < Alpha", p.K, p.Alpha)
@@ -51,6 +59,12 @@ func (p Parameters) Valid() error {
 		return fmt.Errorf("ConcurrentRepolls = %d: Fails the condition that: 0 < ConcurrentRepolls", p.ConcurrentRepolls)
 	case p.ConcurrentRepolls > p.BetaRogue:
 		return fmt.Errorf("ConcurrentRepolls = %d, BetaRogue = %d: Fails the condition that: ConcurrentRepolls <= BetaRogue", p.ConcurrentRepolls, p.BetaRogue)
+	case p.OptimalProcessing <= 0:
+		return fmt.Errorf("OptimalProcessing = %d: Fails the condition that: 0 < OptimalProcessing", p.OptimalProcessing)
+	case p.MaxOutstandingItems <= 0:
+		return fmt.Errorf("MaxOutstandingItems = %d: Fails the condition that: 0 < MaxOutstandingItems", p.MaxOutstandingItems)
+	case p.MaxItemProcessingTime <= 0:
+		return fmt.Errorf("MaxItemProcessingTime = %d: Fails the condition that: 0 < MaxItemProcessingTime", p.MaxItemProcessingTime)
 	default:
 		return nil
 	}

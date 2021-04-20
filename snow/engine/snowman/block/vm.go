@@ -46,12 +46,12 @@ type ChainVM interface {
 	// Notify the VM of the currently preferred block.
 	//
 	// This should always be a block that has no children known to consensus.
-	SetPreference(ids.ID)
+	SetPreference(ids.ID) error
 
 	// LastAccepted returns the ID of the last accepted block.
 	//
 	// If no blocks have been accepted by consensus yet, it is assumed there is
 	// a definitionally accepted block, the Genesis block, that will be
 	// returned.
-	LastAccepted() ids.ID
+	LastAccepted() (ids.ID, error)
 }

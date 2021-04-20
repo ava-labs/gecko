@@ -1,0 +1,10 @@
+- name: Not supported
+  fail:
+    msg:
+      This operating system is not supported by this role
+      (system={{ ansible_facts.system }},
+      os_family={{ ansible_facts.os_family }},
+      distribution={{ ansible_facts.distribution }},
+      distribution_version={{ ansible_facts.distribution_version }}).
+  tags:
+    - avalanche_base

@@ -233,7 +233,6 @@ func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, r
 		weight := uint64(0)
 		stake := make([]*avax.TransferableOutput, len(validator.Staked))
 		sortAPIUTXOs(validator.Staked)
-		memo := []byte(nil)
 		for i, apiUTXO := range validator.Staked {
 			addrID, err := bech32ToID(apiUTXO.Address)
 			if err != nil {
@@ -264,11 +263,6 @@ func (ss *StaticService) BuildGenesis(_ *http.Request, args *BuildGenesisArgs, r
 				return errStakeOverflow
 			}
 			weight = newWeight
-			messageBytes, err := formatting.Decode(args.Encoding, apiUTXO.Message)
-			if err != nil {
-				return fmt.Errorf("problem decoding validator UTXO message bytes: %w", err)
-			}
-			memo = append(memo, messageBytes...)
 		}
 
 		if weight == 0 {

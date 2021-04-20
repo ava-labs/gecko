@@ -37,6 +37,7 @@ var (
 		TestSliceWithEmptySerialization,
 		TestRestrictedSlice,
 		TestExtraSpace,
+		TestSliceLengthOverflow,
 	}
 )
 
@@ -967,5 +968,30 @@ func TestExtraSpace(codec GeneralCodec, t testing.TB) {
 	_, err := manager.Unmarshal(byteSlice, &b)
 	if err == nil {
 		t.Fatalf("Should have errored due to too many bytes being passed in")
+	}
+}
+
+// Ensure deserializing slices that have been length restricted errors correctly
+func TestSliceLengthOverflow(codec GeneralCodec, t testing.TB) {
+	var _ GeneralCodec = codec
+
+	type inner struct {
+		Vals []uint32 `serialize:"true" len:"2"`
+	}
+	bytes := []byte{
+		// Codec Version:
+		0x00, 0x00,
+		// Slice Length:
+		0xff, 0xff, 0xff, 0xff,
+	}
+
+	manager := NewDefaultManager()
+	if err := manager.RegisterCodec(0, codec); err != nil {
+		t.Fatal(err)
+	}
+
+	s := inner{}
+	if _, err := manager.Unmarshal(bytes, &s); err == nil {
+		t.Fatalf("Should have errored due to large of a slice")
 	}
 }

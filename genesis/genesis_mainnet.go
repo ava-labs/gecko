@@ -175783,6 +175783,5 @@ var (
 		StakeMintingPeriod:   365 * 24 * time.Hour,
 		EpochFirstTransition: time.Unix(1607626800, 0),
 		EpochDuration:        6 * time.Hour,
-		ApricotPhase0Time:    time.Date(2020, 12, 8, 3, 00, 0, 0, time.UTC),
 	}
 )

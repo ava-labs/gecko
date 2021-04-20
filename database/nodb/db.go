@@ -57,8 +57,8 @@ func (*Batch) Put(_, _ []byte) error { return database.ErrClosed }
 // Delete returns nil
 func (*Batch) Delete([]byte) error { return database.ErrClosed }
 
-// ValueSize returns 0
-func (*Batch) ValueSize() int { return 0 }
+// Size returns 0
+func (*Batch) Size() int { return 0 }
 
 // Write returns nil
 func (*Batch) Write() error { return database.ErrClosed }

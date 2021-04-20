@@ -1133,7 +1133,7 @@ func TestBaseTxSemanticVerifyPendingInvalidUTXO(t *testing.T) {
 		ctx.Lock.Unlock()
 	}()
 
-	vm.Pending()
+	vm.PendingTxs()
 
 	tx := &Tx{UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
 		NetworkID:    networkID,
@@ -1228,7 +1228,7 @@ func TestBaseTxSemanticVerifyPendingWrongAssetID(t *testing.T) {
 		ctx.Lock.Unlock()
 	}()
 
-	vm.Pending()
+	vm.PendingTxs()
 
 	tx := &Tx{UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
 		NetworkID:    networkID,
@@ -1366,7 +1366,7 @@ func TestBaseTxSemanticVerifyPendingUnauthorizedFx(t *testing.T) {
 		ctx.Lock.Unlock()
 	}()
 
-	vm.Pending()
+	vm.PendingTxs()
 
 	tx := &Tx{
 		UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{
@@ -1508,7 +1508,7 @@ func TestBaseTxSemanticVerifyPendingInvalidSignature(t *testing.T) {
 		ctx.Lock.Unlock()
 	}()
 
-	vm.Pending()
+	vm.PendingTxs()
 
 	tx := &Tx{
 		UnsignedTx: &BaseTx{BaseTx: avax.BaseTx{

@@ -6,10 +6,10 @@ package node
 import (
 	"time"
 
-	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/genesis"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/nat"
+	"github.com/ava-labs/avalanchego/network"
 	"github.com/ava-labs/avalanchego/snow/consensus/avalanche"
 	"github.com/ava-labs/avalanchego/snow/networking/benchlist"
 	"github.com/ava-labs/avalanchego/snow/networking/router"
@@ -42,8 +42,11 @@ type Config struct {
 	// Crypto configuration
 	EnableCrypto bool
 
-	// Database to use for the node
-	DB database.Database
+	// Path to database
+	DBPath string
+
+	// If false, uses an in memory database
+	DBEnabled bool
 
 	// Staking configuration
 	StakingIP             utils.DynamicIPDesc
@@ -60,8 +63,12 @@ type Config struct {
 	SendQueueSize           uint32
 	MaxPendingMsgs          uint32
 
+	// Health
+	HealthCheckFreq time.Duration
+
 	// Network configuration
-	NetworkConfig timer.AdaptiveTimeoutConfig
+	NetworkConfig       timer.AdaptiveTimeoutConfig
+	NetworkHealthConfig network.HealthConfig
 
 	// Benchlist Configuration
 	BenchlistConfig benchlist.Config
@@ -78,6 +85,7 @@ type Config struct {
 	HTTPSCertFile       string
 	APIRequireAuthToken bool
 	APIAuthPassword     string
+	APIAllowedOrigins   []string
 
 	// Enable/Disable APIs
 	AdminAPIEnabled    bool
@@ -85,6 +93,7 @@ type Config struct {
 	KeystoreAPIEnabled bool
 	MetricsAPIEnabled  bool
 	HealthAPIEnabled   bool
+	IndexAPIEnabled    bool
 
 	// Logging configuration
 	LoggingConfig logging.Config
@@ -106,6 +115,7 @@ type Config struct {
 
 	// Router that is used to handle incoming consensus messages
 	ConsensusRouter          router.Router
+	RouterHealthConfig       router.HealthConfig
 	ConsensusGossipFrequency time.Duration
 	ConsensusShutdownTimeout time.Duration
 
@@ -128,4 +138,15 @@ type Config struct {
 
 	// Coreth
 	CorethConfig string
+
+	IndexAllowIncomplete bool
+
+	// Should Bootstrap be retried
+	RetryBootstrap bool
+
+	// Max number of times to retry bootstrap
+	RetryBootstrapMaxAttempts int
+
+	// Peer alias configuration
+	PeerAliasTimeout time.Duration
 }

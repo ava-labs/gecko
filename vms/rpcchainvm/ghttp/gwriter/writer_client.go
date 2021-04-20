@@ -6,19 +6,23 @@ package gwriter
 import (
 	"context"
 	"errors"
+	"io"
 
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/gwriter/gwriterproto"
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+var (
+	_ io.Writer = &Client{}
+)
+
+// Client is an io.Writer that talks over RPC.
 type Client struct{ client gwriterproto.WriterClient }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns a writer connected to a remote writer
 func NewClient(client gwriterproto.WriterClient) *Client {
 	return &Client{client: client}
 }
 
-// Write ...
 func (c *Client) Write(p []byte) (int, error) {
 	resp, err := c.client.Write(context.Background(), &gwriterproto.WriteRequest{
 		Payload: p,

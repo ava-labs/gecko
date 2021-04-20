@@ -1,7 +1,17 @@
 - name: Kill Node
   command: killall -SIGTERM avalanchego
-  ignore_errors: true
+  register: killall_avalanchego
+  changed_when:
+    - "killall_avalanchego.rc in [0]"
+  failed_when:
+    - "killall_avalanchego.rc not in [0]"
+    - "killall_avalanchego.stderr not in ['avalanchego: no process found']"
 
 - name: Kill EVM
   command: killall -SIGTERM evm
-  ignore_errors: true
+  register: killall_evm
+  changed_when:
+    - "killall_evm.rc in [0]"
+  failed_when:
+    - "killall_evm.rc not in [0]"
+    - "killall_evm.stderr not in ['evm: no process found']"

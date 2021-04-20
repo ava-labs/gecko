@@ -23,18 +23,18 @@ const (
 )
 
 var (
-	Codec codec.Manager
+	c codec.Manager
 )
 
 func init() {
 	codecV0 := linearcodec.New("serializeV0", maxSize)
 	codecV1 := linearcodec.New("serializeV1", maxSize)
-	Codec = codec.NewManager(maxSize)
+	c = codec.NewManager(maxSize)
 
 	errs := wrappers.Errs{}
 	errs.Add(
-		Codec.RegisterCodec(noEpochTransitionsCodecVersion, codecV0),
-		Codec.RegisterCodec(apricotCodecVersion, codecV1),
+		c.RegisterCodec(noEpochTransitionsCodecVersion, codecV0),
+		c.RegisterCodec(apricotCodecVersion, codecV1),
 	)
 	if errs.Errored() {
 		panic(errs.Err)

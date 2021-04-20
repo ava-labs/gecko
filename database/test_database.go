@@ -26,6 +26,8 @@ var (
 		TestIteratorStartPrefix,
 		TestIteratorMemorySafety,
 		TestIteratorClosed,
+		TestIteratorError,
+		TestIteratorErrorAfterRelease,
 		TestStatNoPanic,
 		TestCompactNoPanic,
 		TestMemorySafetyDatabase,
@@ -33,7 +35,8 @@ var (
 	}
 )
 
-// TestSimpleKeyValue ...
+// TestSimpleKeyValue tests to make sure that simple Put + Get + Delete + Has
+// calls return the expected values.
 func TestSimpleKeyValue(t *testing.T, db Database) {
 	key := []byte("hello")
 	value := []byte("world")
@@ -77,7 +80,8 @@ func TestSimpleKeyValue(t *testing.T, db Database) {
 	}
 }
 
-// TestSimpleKeyValueClosed ...
+// TestSimpleKeyValueClosed tests to make sure that Put + Get + Delete + Has
+// calls return the correct error when the database has been closed.
 func TestSimpleKeyValueClosed(t *testing.T, db Database) {
 	key := []byte("hello")
 	value := []byte("world")
@@ -123,8 +127,8 @@ func TestSimpleKeyValueClosed(t *testing.T, db Database) {
 	}
 }
 
-// TestMemorySafetyDatabase ensures it is safe to modify
-// a key after passing it to Database.Put and Database.Get.
+// TestMemorySafetyDatabase ensures it is safe to modify a key after passing it
+// to Database.Put and Database.Get.
 func TestMemorySafetyDatabase(t *testing.T, db Database) {
 	key := []byte("key")
 	value := []byte("value")
@@ -165,7 +169,7 @@ func TestMemorySafetyDatabase(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchPut ...
+// TestBatchPut tests to make sure that batched writes work as expected.
 func TestBatchPut(t *testing.T, db Database) {
 	key := []byte("hello")
 	value := []byte("world")
@@ -177,8 +181,8 @@ func TestBatchPut(t *testing.T, db Database) {
 
 	if err := batch.Put(key, value); err != nil {
 		t.Fatalf("Unexpected error on batch.Put: %s", err)
-	} else if size := batch.ValueSize(); size <= 0 {
-		t.Fatalf("batch.ValueSize: Returned: %d ; Expected: > 0", size)
+	} else if size := batch.Size(); size <= 0 {
+		t.Fatalf("batch.Size: Returned: %d ; Expected: > 0", size)
 	}
 
 	if err := batch.Write(); err != nil {
@@ -208,7 +212,7 @@ func TestBatchPut(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchDelete ...
+// TestBatchDelete tests to make sure that batched deletes work as expected.
 func TestBatchDelete(t *testing.T, db Database) {
 	key := []byte("hello")
 	value := []byte("world")
@@ -241,8 +245,8 @@ func TestBatchDelete(t *testing.T, db Database) {
 	}
 }
 
-// TestMemorySafetyDatabase ensures it is safe to modify
-// a key after passing it to Batch.Put.
+// TestMemorySafetyDatabase ensures it is safe to modify a key after passing it
+// to Batch.Put.
 func TestMemorySafetyBatch(t *testing.T, db Database) {
 	key := []byte("hello")
 	value := []byte("world")
@@ -256,8 +260,8 @@ func TestMemorySafetyBatch(t *testing.T, db Database) {
 	// Put a key in the batch
 	if err := batch.Put(key, value); err != nil {
 		t.Fatalf("Unexpected error on batch.Put: %s", err)
-	} else if size := batch.ValueSize(); size <= 0 {
-		t.Fatalf("batch.ValueSize: Returned: %d ; Expected: > 0", size)
+	} else if size := batch.Size(); size <= 0 {
+		t.Fatalf("batch.Size: Returned: %d ; Expected: > 0", size)
 	}
 
 	// Modify the key
@@ -286,7 +290,8 @@ func TestMemorySafetyBatch(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchReset ...
+// TestBatchReset tests to make sure that a batch drops un-written operations
+// when it is reset.
 func TestBatchReset(t *testing.T, db Database) {
 	key := []byte("hello")
 	value := []byte("world")
@@ -321,7 +326,8 @@ func TestBatchReset(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchReuse ...
+// TestBatchReuse tests to make sure that a batch can be reused once it is
+// reset.
 func TestBatchReuse(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -377,7 +383,8 @@ func TestBatchReuse(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchRewrite ...
+// TestBatchRewrite tests to make sure that write can be called multiple times
+// on a batch and the values will be updated correctly.
 func TestBatchRewrite(t *testing.T, db Database) {
 	key := []byte("hello1")
 	value := []byte("world1")
@@ -420,7 +427,8 @@ func TestBatchRewrite(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchReplay ...
+// TestBatchReplay tests to make sure that batches will correctly replay their
+// contents.
 func TestBatchReplay(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -484,7 +492,8 @@ func TestBatchReplay(t *testing.T, db Database) {
 	}
 }
 
-// TestBatchInner ...
+// TestBatchInner tests to make sure that inner can be used to write to the
+// database.
 func TestBatchInner(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -540,7 +549,8 @@ func TestBatchInner(t *testing.T, db Database) {
 	}
 }
 
-// TestIterator ...
+// TestIterator tests to make sure the database iterates over the database
+// contents lexicographically.
 func TestIterator(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -583,7 +593,8 @@ func TestIterator(t *testing.T, db Database) {
 	}
 }
 
-// TestIteratorStart ...
+// TestIteratorStart tests to make sure the the iterator can be configured to
+// start mid way through the database.
 func TestIteratorStart(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -620,7 +631,8 @@ func TestIteratorStart(t *testing.T, db Database) {
 	}
 }
 
-// TestIteratorPrefix ...
+// TestIteratorPrefix tests to make sure the iterator can be configured to skip
+// keys missing the provided prefix.
 func TestIteratorPrefix(t *testing.T, db Database) {
 	key1 := []byte("hello")
 	value1 := []byte("world1")
@@ -657,7 +669,8 @@ func TestIteratorPrefix(t *testing.T, db Database) {
 	}
 }
 
-// TestIteratorStartPrefix ...
+// TestIteratorStartPrefix tests to make sure that the iterator can start mid
+// way through the database while skipping a prefix.
 func TestIteratorStartPrefix(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -705,7 +718,8 @@ func TestIteratorStartPrefix(t *testing.T, db Database) {
 	}
 }
 
-// TestIteratorMemorySafety ...
+// TestIteratorMemorySafety tests to make sure that keys can values are able to
+// be modified from the returned iterator.
 func TestIteratorMemorySafety(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -762,7 +776,8 @@ func TestIteratorMemorySafety(t *testing.T, db Database) {
 	}
 }
 
-// TestIteratorClosed ...
+// TestIteratorClosed tests to make sure that an iterator that was created with
+// a closed database will report a closed error correctly.
 func TestIteratorClosed(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -792,7 +807,76 @@ func TestIteratorClosed(t *testing.T, db Database) {
 	}
 }
 
-// TestStatNoPanic ...
+// TestIteratorError tests to make sure that an iterator still works after the
+// database is closed.
+func TestIteratorError(t *testing.T, db Database) {
+	key := []byte("hello1")
+	value := []byte("world1")
+
+	if err := db.Put(key, value); err != nil {
+		t.Fatalf("Unexpected error on batch.Put: %s", err)
+	}
+
+	iterator := db.NewIterator()
+	if iterator == nil {
+		t.Fatalf("db.NewIterator returned nil")
+	}
+	defer iterator.Release()
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("Unexpected error on db.Close: %s", err)
+	}
+
+	if !iterator.Next() {
+		t.Fatalf("iterator.Next Returned: %v ; Expected: %v", false, true)
+	}
+	if itKey := iterator.Key(); !bytes.Equal(itKey, key) {
+		t.Fatalf("iterator.Key Returned: 0x%x ; Expected: 0x%x", itKey, key)
+	}
+	if itValue := iterator.Value(); !bytes.Equal(itValue, value) {
+		t.Fatalf("iterator.Value Returned: 0x%x ; Expected: 0x%x", itValue, value)
+	}
+	if err := iterator.Error(); err != nil {
+		t.Fatalf("Expected no error on iterator.Error but got %s", err)
+	}
+}
+
+// TestIteratorErrorAfterRelease tests to make sure that an iterator that was
+// released still reports the error correctly.
+func TestIteratorErrorAfterRelease(t *testing.T, db Database) {
+	key := []byte("hello1")
+	value := []byte("world1")
+
+	if err := db.Put(key, value); err != nil {
+		t.Fatalf("Unexpected error on batch.Put: %s", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("Unexpected error on db.Close: %s", err)
+	}
+
+	iterator := db.NewIterator()
+	if iterator == nil {
+		t.Fatalf("db.NewIterator returned nil")
+	}
+
+	iterator.Release()
+
+	if iterator.Next() {
+		t.Fatalf("iterator.Next Returned: %v ; Expected: %v", false, true)
+	}
+	if key := iterator.Key(); key != nil {
+		t.Fatalf("iterator.Key Returned: 0x%x ; Expected: nil", key)
+	}
+	if value := iterator.Value(); value != nil {
+		t.Fatalf("iterator.Value Returned: 0x%x ; Expected: nil", value)
+	}
+	if err := iterator.Error(); err != ErrClosed {
+		t.Fatalf("Expected %s on iterator.Error", ErrClosed)
+	}
+}
+
+// TestStatNoPanic tests to make sure that Stat never panics.
 func TestStatNoPanic(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")
@@ -824,7 +908,7 @@ func TestStatNoPanic(t *testing.T, db Database) {
 	_, _ = db.Stat("")
 }
 
-// TestCompactNoPanic ...
+// TestCompactNoPanic tests to make sure compact never panics.
 func TestCompactNoPanic(t *testing.T, db Database) {
 	key1 := []byte("hello1")
 	value1 := []byte("world1")

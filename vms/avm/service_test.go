@@ -14,12 +14,14 @@ import (
 	"github.com/ava-labs/avalanchego/api"
 	"github.com/ava-labs/avalanchego/api/keystore"
 	"github.com/ava-labs/avalanchego/chains/atomic"
+	"github.com/ava-labs/avalanchego/database/memdb"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/choices"
 	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/crypto"
 	"github.com/ava-labs/avalanchego/utils/formatting"
 	"github.com/ava-labs/avalanchego/utils/json"
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/sampler"
 	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
@@ -37,11 +39,8 @@ var (
 // 4) atomic memory to use in tests
 func setup(t *testing.T) ([]byte, *VM, *Service, *atomic.Memory) {
 	genesisBytes, _, vm, m := GenesisVM(t)
-	keystore, err := keystore.CreateTestKeystore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := keystore.AddUser(username, password); err != nil {
+	keystore := keystore.New(logging.NoLog{}, memdb.New())
+	if err := keystore.CreateUser(username, password); err != nil {
 		t.Fatalf("couldn't add user: %s", err)
 	}
 	vm.ctx.Keystore = keystore.NewBlockchainKeyStore(chainID)
@@ -111,12 +110,12 @@ func sampleAddrs(t *testing.T, vm *VM, addrs []ids.ShortID) ([]ids.ShortID, []st
 // Returns error if [numTxFees] tx fees was not deducted from the addresses in [fromAddrs]
 // relative to their starting balance
 func verifyTxFeeDeducted(t *testing.T, s *Service, fromAddrs []ids.ShortID, numTxFees int) error {
-	totalTxFee := numTxFees * int(s.vm.txFee)
-	fromAddrsStartBalance := int(startBalance) * len(fromAddrs)
+	totalTxFee := uint64(numTxFees) * s.vm.txFee
+	fromAddrsStartBalance := startBalance * uint64(len(fromAddrs))
 
 	// Key: Address
 	// Value: AVAX balance
-	balances := map[ids.ShortID]int{}
+	balances := map[ids.ShortID]uint64{}
 
 	for _, addr := range addrs { // get balances for all addresses
 		addrStr, err := s.vm.FormatLocalAddress(addr)
@@ -134,10 +133,10 @@ func verifyTxFeeDeducted(t *testing.T, s *Service, fromAddrs []ids.ShortID, numT
 		if err != nil {
 			return fmt.Errorf("couldn't get balance of %s: %w", addr, err)
 		}
-		balances[addr] = int(reply.Balance)
+		balances[addr] = uint64(reply.Balance)
 	}
 
-	fromAddrsTotalBalance := 0
+	fromAddrsTotalBalance := uint64(0)
 	for _, addr := range fromAddrs {
 		fromAddrsTotalBalance += balances[addr]
 	}
@@ -1486,7 +1485,7 @@ func TestSendMultiple(t *testing.T) {
 		t.Fatal("Transaction ID returned by SendMultiple does not match the transaction found in vm's pending transactions")
 	}
 
-	if _, err = vm.Get(reply.TxID); err != nil {
+	if _, err = vm.GetTx(reply.TxID); err != nil {
 		t.Fatalf("Failed to retrieve created transaction: %s", err)
 	}
 }

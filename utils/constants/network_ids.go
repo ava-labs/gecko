@@ -5,8 +5,6 @@ package constants
 
 import (
 	"fmt"
-	"math"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -88,7 +86,7 @@ var (
 		LocalHRP:    LocalID,
 	}
 
-	ValidNetworkName = regexp.MustCompile(`network-[0-9]+`)
+	ValidNetworkPrefix = "network-"
 )
 
 // GetHRP returns the Human-Readable-Part of bech32 addresses for a networkID
@@ -115,20 +113,13 @@ func NetworkID(networkName string) (uint32, error) {
 		return id, nil
 	}
 
-	if id, err := strconv.ParseUint(networkName, 10, 0); err == nil {
-		if id > math.MaxUint32 {
-			return 0, fmt.Errorf("networkID %s not in [0, 2^32)", networkName)
-		}
-		return uint32(id), nil
+	idStr := networkName
+	if strings.HasPrefix(networkName, ValidNetworkPrefix) {
+		idStr = networkName[len(ValidNetworkPrefix):]
 	}
-	if ValidNetworkName.MatchString(networkName) {
-		if id, err := strconv.Atoi(networkName[8:]); err == nil {
-			if id > math.MaxUint32 {
-				return 0, fmt.Errorf("networkID %s not in [0, 2^32)", networkName)
-			}
-			return uint32(id), nil
-		}
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %q as a network name", networkName)
 	}
-
-	return 0, fmt.Errorf("failed to parse %s as a network name", networkName)
+	return uint32(id), nil
 }

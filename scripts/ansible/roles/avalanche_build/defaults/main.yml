@@ -1,5 +1,5 @@
-avalanche_binary: ~/go/src/github.com/ava-labs/avalanchego/build/avalanchego
-repo_folder: ~/go/src/github.com/ava-labs/avalanchego
+avalanche_binary: "{{ repo_folder }}/build/avalanchego"
+repo_folder: "~{{ ansible_facts.user_id }}/go/src/github.com/ava-labs/avalanchego"
 repo_name: ava-labs/avalanchego
-repo_url: https://github.com/{{ repo_name }}
+repo_url: git@github.com:{{ repo_name }}
 repo_branch: dev

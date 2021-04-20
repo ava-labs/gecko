@@ -54,7 +54,10 @@ func (v *voter) Update() {
 		return
 	}
 
-	v.t.VM.SetPreference(v.t.Consensus.Preference())
+	if err := v.t.VM.SetPreference(v.t.Consensus.Preference()); err != nil {
+		v.t.errs.Add(err)
+		return
+	}
 
 	if v.t.Consensus.Finalized() {
 		v.t.Ctx.Log.Debug("Snowman engine can quiesce")
@@ -74,11 +77,11 @@ func (v *voter) bubbleVotes(votes ids.Bag) ids.Bag {
 			continue
 		}
 
-		for blk.Status().Fetched() && !v.t.Consensus.Issued(blk) {
+		for blk.Status().Fetched() && !v.t.Consensus.DecidedOrProcessing(blk) {
 			blk = blk.Parent()
 		}
 
-		if !blk.Status().Decided() && v.t.Consensus.Issued(blk) {
+		if !blk.Status().Decided() && v.t.Consensus.DecidedOrProcessing(blk) {
 			bubbledVotes.AddCount(blk.ID(), count)
 		}
 	}

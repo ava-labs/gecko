@@ -14,8 +14,8 @@ type evictable struct {
 	evicted int
 }
 
-func (e *evictable) ID() ids.ID { return e.id }
-func (e *evictable) Evict()     { e.evicted++ }
+func (e *evictable) Key() interface{} { return e.id }
+func (e *evictable) Evict()           { e.evicted++ }
 
 func TestEvictableLRU(t *testing.T) {
 	cache := EvictableLRU{}

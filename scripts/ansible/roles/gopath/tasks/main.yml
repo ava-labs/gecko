@@ -1,5 +1,0 @@
-- name: Set GOPATH
-  lineinfile:
-    path: ~/.bashrc
-    line: GOPATH=$HOME/go
-    mode: preserve

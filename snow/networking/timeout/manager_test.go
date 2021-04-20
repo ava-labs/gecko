@@ -12,6 +12,7 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow/networking/benchlist"
+	"github.com/ava-labs/avalanchego/utils/constants"
 	"github.com/ava-labs/avalanchego/utils/timer"
 )
 
@@ -19,13 +20,13 @@ func TestManagerFire(t *testing.T) {
 	manager := Manager{}
 	benchlist := benchlist.NewNoBenchlist()
 	err := manager.Initialize(&timer.AdaptiveTimeoutConfig{
-		InitialTimeout: time.Millisecond,
-		MinimumTimeout: time.Millisecond,
-		MaximumTimeout: 10 * time.Second,
-		TimeoutInc:     2 * time.Millisecond,
-		TimeoutDec:     time.Millisecond,
-		Namespace:      "",
-		Registerer:     prometheus.NewRegistry(),
+		InitialTimeout:     time.Millisecond,
+		MinimumTimeout:     time.Millisecond,
+		MaximumTimeout:     10 * time.Second,
+		TimeoutCoefficient: 1.25,
+		TimeoutHalflife:    5 * time.Minute,
+		MetricsNamespace:   "",
+		Registerer:         prometheus.NewRegistry(),
 	}, benchlist)
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +36,7 @@ func TestManagerFire(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	manager.Register(ids.ShortID{}, ids.ID{}, 0, true, 0, wg.Done)
+	manager.RegisterRequest(ids.ShortID{}, ids.ID{}, constants.PullQueryMsg, ids.GenerateTestID(), wg.Done)
 
 	wg.Wait()
 }
@@ -44,13 +45,13 @@ func TestManagerCancel(t *testing.T) {
 	manager := Manager{}
 	benchlist := benchlist.NewNoBenchlist()
 	err := manager.Initialize(&timer.AdaptiveTimeoutConfig{
-		InitialTimeout: time.Millisecond,
-		MinimumTimeout: time.Millisecond,
-		MaximumTimeout: 10 * time.Second,
-		TimeoutInc:     2 * time.Millisecond,
-		TimeoutDec:     time.Millisecond,
-		Namespace:      "",
-		Registerer:     prometheus.NewRegistry(),
+		InitialTimeout:     time.Millisecond,
+		MinimumTimeout:     time.Millisecond,
+		MaximumTimeout:     10 * time.Second,
+		TimeoutCoefficient: 1.25,
+		TimeoutHalflife:    5 * time.Minute,
+		MetricsNamespace:   "",
+		Registerer:         prometheus.NewRegistry(),
 	}, benchlist)
 	if err != nil {
 		t.Fatal(err)
@@ -62,11 +63,12 @@ func TestManagerCancel(t *testing.T) {
 
 	fired := new(bool)
 
-	manager.Register(ids.ShortID{}, ids.ID{}, 0, true, 0, func() { *fired = true })
+	id := ids.GenerateTestID()
+	manager.RegisterRequest(ids.ShortID{}, ids.ID{}, constants.PullQueryMsg, id, func() { *fired = true })
 
-	manager.Cancel(ids.ShortID{}, ids.ID{}, 0)
+	manager.RegisterResponse(ids.ShortID{}, ids.ID{}, id, constants.GetMsg, 1*time.Second)
 
-	manager.Register(ids.ShortID{}, ids.ID{}, 1, true, 0, wg.Done)
+	manager.RegisterRequest(ids.ShortID{}, ids.ID{}, constants.PullQueryMsg, ids.GenerateTestID(), wg.Done)
 
 	wg.Wait()
 

@@ -13,7 +13,7 @@ import (
 // Builder builds a vertex given a set of parentIDs and transactions.
 type Builder interface {
 	// Build a new vertex from the contents of a vertex
-	Build(
+	BuildVtx(
 		epoch uint32,
 		parentIDs []ids.ID,
 		txs []snowstorm.Tx,
@@ -47,7 +47,7 @@ func Build(
 		return nil, err
 	}
 
-	vtxBytes, err := Codec.Marshal(innerVtx.Version, innerVtx)
+	vtxBytes, err := c.Marshal(innerVtx.Version, innerVtx)
 	vtx := statelessVertex{
 		innerStatelessVertex: innerVtx,
 		id:                   hashing.ComputeHash256Array(vtxBytes),

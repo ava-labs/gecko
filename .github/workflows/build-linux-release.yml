@@ -29,7 +29,9 @@ jobs:
       run: ./scripts/build.sh 
 
     - name: Install aws cli
-      run: sudo apt-get install awscli
+      run: |
+        sudo apt update
+        sudo apt-get install awscli
 
     - name: Install rpmbuild
       run: sudo apt-get install rpm 

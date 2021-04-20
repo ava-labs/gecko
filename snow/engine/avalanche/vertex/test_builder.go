@@ -19,9 +19,9 @@ var (
 )
 
 type TestBuilder struct {
-	T         *testing.T
-	CantBuild bool
-	BuildF    func(
+	T            *testing.T
+	CantBuildVtx bool
+	BuildVtxF    func(
 		epoch uint32,
 		parentIDs []ids.ID,
 		txs []snowstorm.Tx,
@@ -29,18 +29,18 @@ type TestBuilder struct {
 	) (avalanche.Vertex, error)
 }
 
-func (b *TestBuilder) Default(cant bool) { b.CantBuild = cant }
+func (b *TestBuilder) Default(cant bool) { b.CantBuildVtx = cant }
 
-func (b *TestBuilder) Build(
+func (b *TestBuilder) BuildVtx(
 	epoch uint32,
 	parentIDs []ids.ID,
 	txs []snowstorm.Tx,
 	restrictions []ids.ID,
 ) (avalanche.Vertex, error) {
-	if b.BuildF != nil {
-		return b.BuildF(epoch, parentIDs, txs, restrictions)
+	if b.BuildVtxF != nil {
+		return b.BuildVtxF(epoch, parentIDs, txs, restrictions)
 	}
-	if b.CantBuild && b.T != nil {
+	if b.CantBuildVtx && b.T != nil {
 		b.T.Fatal(errBuild)
 	}
 	return nil, errBuild

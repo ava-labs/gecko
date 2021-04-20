@@ -5,6 +5,8 @@ package bootstrap
 
 import (
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -27,6 +29,10 @@ const (
 	stripeDistance = 2000
 	stripeWidth    = 5
 	cacheSize      = 100000
+
+	// Parameters for delaying bootstrapping to avoid potential CPU burns
+	initialBootstrappingDelay = 500 * time.Millisecond
+	maxBootstrappingDelay     = time.Minute
 )
 
 // Config ...
@@ -60,6 +66,10 @@ type Bootstrapper struct {
 
 	// Contains IDs of vertices that have recently been processed
 	processedCache *cache.LRU
+	// number of state transitions executed
+	executedStateTransitions int
+
+	delayAmount time.Duration
 }
 
 // Initialize this engine.
@@ -75,6 +85,8 @@ func (b *Bootstrapper) Initialize(
 	b.VM = config.VM
 	b.processedCache = &cache.LRU{Size: cacheSize}
 	b.OnFinished = onFinished
+	b.executedStateTransitions = math.MaxInt32
+	b.delayAmount = initialBootstrappingDelay
 
 	if err := b.metrics.Initialize(namespace, registerer); err != nil {
 		return err
@@ -100,15 +112,15 @@ func (b *Bootstrapper) Initialize(
 
 // CurrentAcceptedFrontier returns the set of vertices that this node has accepted
 // that have no accepted children
-func (b *Bootstrapper) CurrentAcceptedFrontier() []ids.ID {
-	return b.Manager.Edge()
+func (b *Bootstrapper) CurrentAcceptedFrontier() ([]ids.ID, error) {
+	return b.Manager.Edge(), nil
 }
 
 // FilterAccepted returns the IDs of vertices in [containerIDs] that this node has accepted
 func (b *Bootstrapper) FilterAccepted(containerIDs []ids.ID) []ids.ID {
 	acceptedVtxIDs := make([]ids.ID, 0, len(containerIDs))
 	for _, vtxID := range containerIDs {
-		if vtx, err := b.Manager.Get(vtxID); err == nil && vtx.Status() == choices.Accepted {
+		if vtx, err := b.Manager.GetVtx(vtxID); err == nil && vtx.Status() == choices.Accepted {
 			acceptedVtxIDs = append(acceptedVtxIDs, vtxID)
 		}
 	}
@@ -130,7 +142,7 @@ func (b *Bootstrapper) fetch(vtxIDs ...ids.ID) error {
 		}
 
 		// Make sure we don't already have this vertex
-		if _, err := b.Manager.Get(vtxID); err == nil {
+		if _, err := b.Manager.GetVtx(vtxID); err == nil {
 			continue
 		}
 
@@ -144,7 +156,7 @@ func (b *Bootstrapper) fetch(vtxIDs ...ids.ID) error {
 		b.OutstandingRequests.Add(validatorID, b.RequestID, vtxID)
 		b.Sender.GetAncestors(validatorID, b.RequestID, vtxID) // request vertex and ancestors
 	}
-	return b.finish()
+	return b.checkFinish()
 }
 
 // Process the vertices in [vtxs].
@@ -159,13 +171,11 @@ func (b *Bootstrapper) process(vtxs ...avalanche.Vertex) error {
 		}
 	}
 
-	// Cache to ensure that we don't reprocess the same vertex within the loop below
-	// TODO remove after Apricot release?
-	dontReprocessCache := &cache.LRU{Size: 1000}
+	vtxHeightSet := ids.Set{}
+	prevHeight := uint64(0)
 	for toProcess.Len() > 0 { // While there are unprocessed vertices
 		vtx := toProcess.Pop() // Get an unknown vertex or one furthest down the DAG
 		vtxID := vtx.ID()
-		dontReprocessCache.Put(vtxID, nil)
 
 		switch vtx.Status() {
 		case choices.Unknown:
@@ -185,7 +195,11 @@ func (b *Bootstrapper) process(vtxs ...avalanche.Vertex) error {
 				b.numFetchedVts.Inc()
 				b.NumFetched++ // Progress tracker
 				if b.NumFetched%common.StatusUpdateFrequency == 0 {
-					b.Ctx.Log.Info("fetched %d vertices", b.NumFetched)
+					if !b.Restarted {
+						b.Ctx.Log.Info("fetched %d vertices", b.NumFetched)
+					} else {
+						b.Ctx.Log.Debug("fetched %d vertices", b.NumFetched)
+					}
 				}
 			} else {
 				b.Ctx.Log.Verbo("couldn't push to vtxBlocked: %s", err)
@@ -213,7 +227,7 @@ func (b *Bootstrapper) process(vtxs ...avalanche.Vertex) error {
 			for _, parent := range parents { // Process the parents of this vertex (traverse up the DAG)
 				parentID := parent.ID()
 				if _, ok := b.processedCache.Get(parentID); !ok { // But only if we haven't processed the parent
-					if _, ok := dontReprocessCache.Get(parentID); !ok {
+					if !vtxHeightSet.Contains(parentID) {
 						toProcess.Push(parent)
 					}
 				}
@@ -223,7 +237,15 @@ func (b *Bootstrapper) process(vtxs ...avalanche.Vertex) error {
 				return err
 			}
 			if height%stripeDistance < stripeWidth { // See comment for stripeDistance
-				b.processedCache.Put(vtx.ID(), nil)
+				b.processedCache.Put(vtxID, nil)
+			}
+			if height == prevHeight {
+				vtxHeightSet.Add(vtxID)
+			} else {
+				// Set new height and reset [vtxHeightSet]
+				prevHeight = height
+				vtxHeightSet.Clear()
+				vtxHeightSet.Add(vtxID)
 			}
 		}
 	}
@@ -250,7 +272,7 @@ func (b *Bootstrapper) MultiPut(vdr ids.ShortID, requestID uint32, vtxs [][]byte
 	}
 
 	requestedVtxID, requested := b.OutstandingRequests.Remove(vdr, requestID)
-	vtx, err := b.Manager.Parse(vtxs[0]) // first vertex should be the one we requested in GetAncestors request
+	vtx, err := b.Manager.ParseVtx(vtxs[0]) // first vertex should be the one we requested in GetAncestors request
 	if err != nil {
 		if !requested {
 			b.Ctx.Log.Debug("failed to parse unrequested vertex from %s with requestID %d: %s", vdr, requestID, err)
@@ -291,7 +313,7 @@ func (b *Bootstrapper) MultiPut(vdr ids.ShortID, requestID uint32, vtxs [][]byte
 	}
 
 	for _, vtxBytes := range vtxs[1:] { // Parse/persist all the vertices
-		vtx, err := b.Manager.Parse(vtxBytes) // Persists the vtx
+		vtx, err := b.Manager.ParseVtx(vtxBytes) // Persists the vtx
 		if err != nil {
 			b.Ctx.Log.Debug("failed to parse vertex: %s", err)
 			b.Ctx.Log.Verbo("vertex: %s", formatting.DumpBytes{Bytes: vtxBytes})
@@ -335,9 +357,10 @@ func (b *Bootstrapper) ForceAccepted(acceptedContainerIDs []ids.ID) error {
 			err)
 	}
 
+	b.NumFetched = 0
 	toProcess := make([]avalanche.Vertex, 0, len(acceptedContainerIDs))
 	for _, vtxID := range acceptedContainerIDs {
-		if vtx, err := b.Manager.Get(vtxID); err == nil {
+		if vtx, err := b.Manager.GetVtx(vtxID); err == nil {
 			toProcess = append(toProcess, vtx) // Process this vertex.
 		} else {
 			b.needToFetch.Add(vtxID) // We don't have this vertex. Mark that we have to fetch it.
@@ -346,28 +369,77 @@ func (b *Bootstrapper) ForceAccepted(acceptedContainerIDs []ids.ID) error {
 	return b.process(toProcess...)
 }
 
-// Finish bootstrapping
-func (b *Bootstrapper) finish() error {
+// checkFinish repeatedly executes pending transactions and requests new frontier blocks until there aren't any new ones
+// after which it finishes the bootstrap process
+func (b *Bootstrapper) checkFinish() error {
 	// If there are outstanding requests for vertices or we still need to fetch vertices, we can't finish
 	if b.Ctx.IsBootstrapped() || b.OutstandingRequests.Len() > 0 || b.needToFetch.Len() > 0 {
 		return nil
 	}
 
-	b.Ctx.Log.Info("bootstrapping fetched %d vertices. executing transaction state transitions...",
-		b.NumFetched)
-	if err := b.executeAll(b.TxBlocked, b.Ctx.DecisionDispatcher); err != nil {
+	if !b.Restarted {
+		b.Ctx.Log.Info("bootstrapping fetched %d vertices. Executing transaction state transitions...", b.NumFetched)
+	} else {
+		b.Ctx.Log.Debug("bootstrapping fetched %d vertices. Executing transaction state transitions...", b.NumFetched)
+	}
+
+	_, err := b.executeAll(b.TxBlocked, b.Ctx.DecisionDispatcher)
+	if err != nil {
 		return err
 	}
 
-	b.Ctx.Log.Info("executing vertex state transitions...")
-	if err := b.executeAll(b.VtxBlocked, b.Ctx.ConsensusDispatcher); err != nil {
+	if !b.Restarted {
+		b.Ctx.Log.Info("executing vertex state transitions...")
+	} else {
+		b.Ctx.Log.Debug("executing vertex state transitions...")
+	}
+	executedVts, err := b.executeAll(b.VtxBlocked, b.Ctx.ConsensusDispatcher)
+	if err != nil {
 		return err
 	}
 
+	previouslyExecuted := b.executedStateTransitions
+	b.executedStateTransitions = executedVts
+
+	// Not that executedVts < c*previouslyExecuted is enforced so that the
+	// bootstrapping process will terminate even as new vertices are being
+	// issued.
+	if executedVts > 0 && executedVts < previouslyExecuted/2 && b.RetryBootstrap {
+		b.Ctx.Log.Debug("checking for more vertices before finishing bootstrapping")
+		return b.RestartBootstrap(true)
+	}
+
+	// Notify the subnet that this chain is synced
+	b.Subnet.Bootstrapped(b.Ctx.ChainID)
+
+	// If the subnet hasn't finished bootstrapping, this chain should remain
+	// syncing.
+	if !b.Subnet.IsBootstrapped() {
+		if !b.Restarted {
+			b.Ctx.Log.Info("waiting for the remaining chains in this subnet to finish syncing")
+		} else {
+			b.Ctx.Log.Debug("waiting for the remaining chains in this subnet to finish syncing")
+		}
+		// Delay new incoming messages to avoid consuming unnecessary resources
+		// while keeping up to date on the latest tip.
+		b.Config.Delay.Delay(b.delayAmount)
+		b.delayAmount *= 2
+		if b.delayAmount > maxBootstrappingDelay {
+			b.delayAmount = maxBootstrappingDelay
+		}
+		return b.RestartBootstrap(true)
+	}
+
+	return b.finish()
+}
+
+// Finish bootstrapping
+func (b *Bootstrapper) finish() error {
 	if err := b.VM.Bootstrapped(); err != nil {
 		return fmt.Errorf("failed to notify VM that bootstrapping has finished: %w",
 			err)
 	}
+	b.processedCache.Flush()
 
 	// Start consensus
 	if err := b.OnFinished(); err != nil {
@@ -378,27 +450,39 @@ func (b *Bootstrapper) finish() error {
 	return nil
 }
 
-func (b *Bootstrapper) executeAll(jobs *queue.Jobs, events snow.EventDispatcher) error {
+func (b *Bootstrapper) executeAll(jobs *queue.Jobs, events snow.EventDispatcher) (int, error) {
 	numExecuted := 0
 
 	for job, err := jobs.Pop(); err == nil; job, err = jobs.Pop() {
 		b.Ctx.Log.Debug("Executing: %s", job.ID())
+		// Note that events.Accept must be called before
+		// job.Execute to honor EventDispatcher.Accept's invariant.
+		if err := events.Accept(b.Ctx, job.ID(), job.Bytes()); err != nil {
+			return numExecuted, err
+		}
 		if err := jobs.Execute(job); err != nil {
 			b.Ctx.Log.Error("Error executing: %s", err)
-			return err
+			return numExecuted, err
 		}
 		if err := jobs.Commit(); err != nil {
-			return err
+			return numExecuted, err
 		}
 		numExecuted++
 		if numExecuted%common.StatusUpdateFrequency == 0 { // Periodically print progress
-			b.Ctx.Log.Info("executed %d operations", numExecuted)
+			if !b.Restarted {
+				b.Ctx.Log.Info("executed %d operations", numExecuted)
+			} else {
+				b.Ctx.Log.Debug("executed %d operations", numExecuted)
+			}
 		}
 
-		events.Accept(b.Ctx, job.ID(), job.Bytes())
 	}
-	b.Ctx.Log.Info("executed %d operations", numExecuted)
-	return nil
+	if !b.Restarted {
+		b.Ctx.Log.Info("executed %d operations", numExecuted)
+	} else {
+		b.Ctx.Log.Debug("executed %d operations", numExecuted)
+	}
+	return numExecuted, nil
 }
 
 // Connected implements the Engine interface.

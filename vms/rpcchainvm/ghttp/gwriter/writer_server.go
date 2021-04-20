@@ -10,15 +10,18 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/gwriter/gwriterproto"
 )
 
-// Server is a http.Handler that is managed over RPC.
+var (
+	_ gwriterproto.WriterServer = &Server{}
+)
+
+// Server is an http.Handler that is managed over RPC.
 type Server struct{ writer io.Writer }
 
-// NewServer returns a http.Handler instance manage remotely
+// NewServer returns an http.Handler instance managed remotely
 func NewServer(writer io.Writer) *Server {
 	return &Server{writer: writer}
 }
 
-// Write ...
 func (s *Server) Write(ctx context.Context, req *gwriterproto.WriteRequest) (*gwriterproto.WriteResponse, error) {
 	n, err := s.writer.Write(req.Payload)
 	resp := &gwriterproto.WriteResponse{

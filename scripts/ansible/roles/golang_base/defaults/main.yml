@@ -1,0 +1,7 @@
+---
+# Changes to this minimum version should be coordinated with changes the
+# documented minimum in README.md
+golang_version_min: 1.15.5
+golang_version_min_info: "{{ golang_version_min.split('.') | map('int') | list }}"
+golang_version_min_major: "{{ golang_version_min_info[0] }}"
+golang_version_min_minor: "{{ golang_version_min_info[1] }}"

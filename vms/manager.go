@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ava-labs/avalanchego/api"
+	"github.com/ava-labs/avalanchego/api/server"
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
 	"github.com/ava-labs/avalanchego/snow/engine/common"
@@ -59,13 +59,13 @@ type manager struct {
 
 	// The node's API server.
 	// [manager] adds routes to this server to expose new API endpoints/services
-	apiServer *api.Server
+	apiServer *server.Server
 
 	log logging.Logger
 }
 
 // NewManager returns an instance of a VM manager
-func NewManager(apiServer *api.Server, log logging.Logger) Manager {
+func NewManager(apiServer *server.Server, log logging.Logger) Manager {
 	m := &manager{
 		vmFactories: make(map[ids.ID]VMFactory),
 		apiServer:   apiServer,
@@ -125,12 +125,25 @@ func (m *manager) addStaticAPIEndpoints(vmID ids.ID) {
 		return
 	}
 
+	handlers, err := staticVM.CreateStaticHandlers()
+	if err != nil {
+		m.log.Error("starting static API endpoints for %s errored with: %s", vmID, err)
+
+		staticVM, ok := vm.(common.VM)
+		if ok {
+			if err := staticVM.Shutdown(); err != nil {
+				m.log.Error("shutting down static API endpoints errored with: %s", err)
+			}
+		}
+		return
+	}
+
 	// all static endpoints go to the vm endpoint, defaulting to the vm id
 	defaultEndpoint := "vm/" + vmID.String()
 	// use a single lock for this entire vm
 	lock := new(sync.RWMutex)
 	// register the static endpoints
-	for extension, service := range staticVM.CreateStaticHandlers() {
+	for extension, service := range handlers {
 		m.log.Verbo("adding static API endpoint: %s", defaultEndpoint+extension)
 		if err := m.apiServer.AddRoute(service, lock, defaultEndpoint, extension, m.log); err != nil {
 			m.log.Warn("failed to add static API endpoint %s: %v", fmt.Sprintf("%s%s", defaultEndpoint, extension), err)

@@ -16,17 +16,16 @@ var (
 	_ atomic.SharedMemory = &Client{}
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+// Client is atomic.SharedMemory that talks over RPC.
 type Client struct {
 	client gsharedmemoryproto.SharedMemoryClient
 }
 
-// NewClient returns a shared memory instance connected to a shared memory instance
+// NewClient returns shared memory connected to remote shared memory
 func NewClient(client gsharedmemoryproto.SharedMemoryClient) *Client {
 	return &Client{client: client}
 }
 
-// Put ...
 func (c *Client) Put(peerChainID ids.ID, elems []*atomic.Element, batches ...database.Batch) error {
 	req := gsharedmemoryproto.PutRequest{
 		PeerChainID: peerChainID[:],
@@ -61,7 +60,6 @@ func (c *Client) Put(peerChainID ids.ID, elems []*atomic.Element, batches ...dat
 	return err
 }
 
-// Get ...
 func (c *Client) Get(peerChainID ids.ID, keys [][]byte) (values [][]byte, err error) {
 	resp, err := c.client.Get(context.Background(), &gsharedmemoryproto.GetRequest{
 		PeerChainID: peerChainID[:],
@@ -73,7 +71,6 @@ func (c *Client) Get(peerChainID ids.ID, keys [][]byte) (values [][]byte, err er
 	return resp.Values, nil
 }
 
-// Indexed ...
 func (c *Client) Indexed(
 	peerChainID ids.ID,
 	traits [][]byte,
@@ -99,7 +96,6 @@ func (c *Client) Indexed(
 	return resp.Values, resp.LastTrait, resp.LastKey, nil
 }
 
-// Remove ...
 func (c *Client) Remove(peerChainID ids.ID, keys [][]byte, batches ...database.Batch) error {
 	req := gsharedmemoryproto.RemoveRequest{
 		PeerChainID: peerChainID[:],

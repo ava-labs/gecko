@@ -4,6 +4,9 @@
 package common
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/ava-labs/avalanchego/ids"
 )
 
@@ -87,4 +90,16 @@ func (r *Requests) Len() int { return len(r.idToReq) }
 func (r *Requests) Contains(containerID ids.ID) bool {
 	_, ok := r.idToReq[containerID]
 	return ok
+}
+
+func (r Requests) String() string {
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("Requests: (Num Validators = %d)", len(r.reqsToID)))
+	for vdr, reqs := range r.reqsToID {
+		sb.WriteString(fmt.Sprintf("\n  VDR[%s]: (Outstanding Requests %d)", vdr, len(reqs)))
+		for reqID, containerID := range reqs {
+			sb.WriteString(fmt.Sprintf("\n    Request[%d]: %s", reqID, containerID))
+		}
+	}
+	return sb.String()
 }

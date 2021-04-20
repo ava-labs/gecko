@@ -1,7 +1,1 @@
-- name: Install Go
-  become: true
-  apt:
-    name:
-      - golang-go
-  tags:
-    - golang_base
+ubuntu-18.04.yml

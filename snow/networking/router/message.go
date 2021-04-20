@@ -35,21 +35,25 @@ func (m message) IsPeriodic() bool {
 
 func (m message) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("\n    messageType: %s", m.messageType))
-	sb.WriteString(fmt.Sprintf("\n    validatorID: %s", m.validatorID))
-	sb.WriteString(fmt.Sprintf("\n    requestID: %d", m.requestID))
-	switch m.messageType {
-	case constants.GetAcceptedMsg, constants.AcceptedMsg, constants.ChitsMsg:
-		sb.WriteString(fmt.Sprintf("\n    containerIDs: %s", m.containerIDs))
-	case constants.GetMsg, constants.GetAncestorsMsg, constants.PutMsg, constants.PushQueryMsg, constants.PullQueryMsg:
-		sb.WriteString(fmt.Sprintf("\n    containerID: %s", m.containerID))
-	case constants.MultiPutMsg:
-		sb.WriteString(fmt.Sprintf("\n    numContainers: %d", len(m.containers)))
-	case constants.NotifyMsg:
-		sb.WriteString(fmt.Sprintf("\n    notification: %s", m.notification))
+	sb.WriteString(fmt.Sprintf("(%s, ValidatorID: %s, RequestID: %d", m.messageType, m.validatorID, m.requestID))
+	if !m.received.IsZero() {
+		sb.WriteString(fmt.Sprintf(", Received: %d", m.received.Unix()))
 	}
 	if !m.deadline.IsZero() {
-		sb.WriteString(fmt.Sprintf("\n    deadline: %s", m.deadline))
+		sb.WriteString(fmt.Sprintf(", Deadline: %d", m.deadline.Unix()))
 	}
+	switch m.messageType {
+	case constants.GetAcceptedMsg, constants.AcceptedMsg, constants.ChitsMsg, constants.AcceptedFrontierMsg:
+		sb.WriteString(fmt.Sprintf(", ContainerIDs: %s)", m.containerIDs))
+	case constants.GetMsg, constants.GetAncestorsMsg, constants.PutMsg, constants.PushQueryMsg, constants.PullQueryMsg:
+		sb.WriteString(fmt.Sprintf(", ContainerID: %s)", m.containerID))
+	case constants.MultiPutMsg:
+		sb.WriteString(fmt.Sprintf(", NumContainers: %d)", len(m.containers)))
+	case constants.NotifyMsg:
+		sb.WriteString(fmt.Sprintf(", Notification: %s)", m.notification))
+	default:
+		sb.WriteString(")")
+	}
+
 	return sb.String()
 }

@@ -264,17 +264,17 @@ func (vm *VM) removeStaker(db database.Database, subnetID ids.ID, tx *rewardTx) 
 
 // Returns the pending staker that will start staking next
 func (vm *VM) nextStakerStart(db database.Database, subnetID ids.ID) (*Tx, error) {
-	iter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, startDBPrefix)), db).NewIterator()
-	defer iter.Release()
+	startIter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, startDBPrefix)), db).NewIterator()
+	defer startIter.Release()
 
-	if !iter.Next() {
+	if !startIter.Next() {
 		return nil, errNoValidators
 	}
 	// Key: [Staker start time] | [Tx ID]
 	// Value: Byte repr. of tx that added this validator
 
 	tx := Tx{}
-	if _, err := Codec.Unmarshal(iter.Value(), &tx); err != nil {
+	if _, err := Codec.Unmarshal(startIter.Value(), &tx); err != nil {
 		return nil, err
 	}
 	return &tx, tx.Sign(vm.codec, nil)
@@ -282,17 +282,17 @@ func (vm *VM) nextStakerStart(db database.Database, subnetID ids.ID) (*Tx, error
 
 // Returns the current staker that will stop staking next
 func (vm *VM) nextStakerStop(db database.Database, subnetID ids.ID) (*rewardTx, error) {
-	iter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, stopDBPrefix)), db).NewIterator()
-	defer iter.Release()
+	stopIter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, stopDBPrefix)), db).NewIterator()
+	defer stopIter.Release()
 
-	if !iter.Next() {
+	if !stopIter.Next() {
 		return nil, errNoValidators
 	}
 	// Key: [Staker stop time] | [Tx ID]
 	// Value: Byte repr. of tx that added this validator
 
 	tx := rewardTx{}
-	if _, err := Codec.Unmarshal(iter.Value(), &tx); err != nil {
+	if _, err := Codec.Unmarshal(stopIter.Value(), &tx); err != nil {
 		return nil, err
 	}
 	return &tx, tx.Tx.Sign(vm.codec, nil)
@@ -300,11 +300,11 @@ func (vm *VM) nextStakerStop(db database.Database, subnetID ids.ID) (*rewardTx, 
 
 // Returns true if [nodeID] is a validator (not a delegator) of subnet [subnetID]
 func (vm *VM) isValidator(db database.Database, subnetID ids.ID, nodeID ids.ShortID) (TimedTx, bool, error) {
-	iter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, stopDBPrefix)), db).NewIterator()
-	defer iter.Release()
+	stopIter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, stopDBPrefix)), db).NewIterator()
+	defer stopIter.Release()
 
-	for iter.Next() {
-		txBytes := iter.Value()
+	for stopIter.Next() {
+		txBytes := stopIter.Value()
 		tx := rewardTx{}
 		if _, err := Codec.Unmarshal(txBytes, &tx); err != nil {
 			return nil, false, err
@@ -333,11 +333,11 @@ func (vm *VM) isValidator(db database.Database, subnetID ids.ID, nodeID ids.Shor
 // Returns true if [nodeID] will be a validator (not a delegator) of subnet
 // [subnetID]
 func (vm *VM) willBeValidator(db database.Database, subnetID ids.ID, nodeID ids.ShortID) (TimedTx, bool, error) {
-	iter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, startDBPrefix)), db).NewIterator()
-	defer iter.Release()
+	startIter := prefixdb.NewNested([]byte(fmt.Sprintf("%s%s", subnetID, startDBPrefix)), db).NewIterator()
+	defer startIter.Release()
 
-	for iter.Next() {
-		txBytes := iter.Value()
+	for startIter.Next() {
+		txBytes := startIter.Value()
 		tx := Tx{}
 		if _, err := Codec.Unmarshal(txBytes, &tx); err != nil {
 			return nil, false, err
@@ -521,7 +521,7 @@ func (vm *VM) getPaginatedUTXOs(
 			start = startUTXOID
 		}
 
-		utxoIDs, err := vm.getReferencingUTXOs(vm.DB, addr.Bytes(), start, searchSize) // Get UTXOs associated with [addr]
+		utxoIDs, err := vm.getReferencingUTXOs(db, addr.Bytes(), start, searchSize) // Get UTXOs associated with [addr]
 		if err != nil {
 			return nil, ids.ShortID{}, ids.ID{}, fmt.Errorf("couldn't get UTXOs for address %s: %w", addr, err)
 		}
@@ -533,7 +533,7 @@ func (vm *VM) getPaginatedUTXOs(
 				continue
 			}
 
-			utxo, err := vm.getUTXO(vm.DB, utxoID)
+			utxo, err := vm.getUTXO(db, utxoID)
 			if err != nil {
 				return nil, ids.ShortID{}, ids.ID{}, fmt.Errorf("couldn't get UTXO %s: %w", utxoID, err)
 			}

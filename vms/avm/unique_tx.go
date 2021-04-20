@@ -106,7 +106,8 @@ func (tx *UniqueTx) setStatus(status choices.Status) error {
 }
 
 // ID returns the wrapped txID
-func (tx *UniqueTx) ID() ids.ID { return tx.txID }
+func (tx *UniqueTx) ID() ids.ID       { return tx.txID }
+func (tx *UniqueTx) Key() interface{} { return tx.txID }
 
 // Accept is called when the transaction was finalized as accepted by consensus
 func (tx *UniqueTx) Accept() error {
@@ -144,6 +145,7 @@ func (tx *UniqueTx) Accept() error {
 	}
 
 	txID := tx.ID()
+
 	commitBatch, err := tx.vm.db.CommitBatch()
 	if err != nil {
 		tx.vm.ctx.Log.Error("Failed to calculate CommitBatch for %s due to %s", txID, err)
@@ -158,6 +160,7 @@ func (tx *UniqueTx) Accept() error {
 	tx.vm.ctx.Log.Verbo("Accepted Tx: %s", txID)
 
 	tx.vm.pubsub.Publish("accepted", txID)
+
 	tx.vm.walletService.decided(txID)
 
 	tx.deps = nil // Needed to prevent a memory leak

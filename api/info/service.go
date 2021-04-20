@@ -132,6 +132,11 @@ func (service *Info) GetBlockchainID(_ *http.Request, args *GetBlockchainIDArgs,
 	return err
 }
 
+// PeersArgs are the arguments for calling Peers
+type PeersArgs struct {
+	NodeIDs []string `json:"nodeIDs"`
+}
+
 // PeersReply are the results from calling Peers
 type PeersReply struct {
 	// Number of elements in [Peers]
@@ -141,10 +146,19 @@ type PeersReply struct {
 }
 
 // Peers returns the list of current validators
-func (service *Info) Peers(_ *http.Request, _ *struct{}, reply *PeersReply) error {
+func (service *Info) Peers(_ *http.Request, args *PeersArgs, reply *PeersReply) error {
 	service.log.Info("Info: Peers called")
 
-	reply.Peers = service.networking.Peers()
+	nodeIDs := make([]ids.ShortID, 0, len(args.NodeIDs))
+	for _, nodeID := range args.NodeIDs {
+		nID, err := ids.ShortFromPrefixedString(nodeID, constants.NodeIDPrefix)
+		if err != nil {
+			return err
+		}
+		nodeIDs = append(nodeIDs, nID)
+	}
+
+	reply.Peers = service.networking.Peers(nodeIDs)
 	reply.NumPeers = json.Uint64(len(reply.Peers))
 	return nil
 }

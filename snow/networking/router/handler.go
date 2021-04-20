@@ -85,10 +85,14 @@ import (
 // - how to track CPU utilization of a peer
 // - "MaxMessages"
 
+const (
+	maxSleepDuration = 100 * time.Millisecond
+)
+
 // Handler passes incoming messages from the network to the consensus engine
 // (Actually, it receives the incoming messages from a ChainRouter, but same difference)
 type Handler struct {
-	metrics
+	metrics handlerMetrics
 
 	validators validators.Set
 
@@ -111,6 +115,8 @@ type Handler struct {
 
 	toClose func()
 	closing utils.AtomicBool
+
+	delay *Delay
 }
 
 // Initialize this consensus handler
@@ -125,7 +131,8 @@ func (h *Handler) Initialize(
 	stakerCPUPortion float64,
 	namespace string,
 	metrics prometheus.Registerer,
-) {
+	delay *Delay,
+) error {
 	h.ctx = engine.Context()
 	if err := h.metrics.Initialize(namespace, metrics); err != nil {
 		h.ctx.Log.Warn("initializing handler metrics errored with: %s", err)
@@ -155,7 +162,7 @@ func (h *Handler) Initialize(
 
 	h.cpuTracker = tracker.NewCPUTracker(uptime.IntervalFactory{}, cpuInterval)
 	msgTracker := tracker.NewMessageTracker()
-	msgManager := NewMsgManager(
+	msgManager, err := NewMsgManager(
 		validators,
 		h.ctx.Log,
 		msgTracker,
@@ -164,7 +171,12 @@ func (h *Handler) Initialize(
 		maxNonStakerPendingMsgs,
 		stakerMsgPortion,
 		stakerCPUPortion,
+		namespace,
+		metrics,
 	)
+	if err != nil {
+		return err
+	}
 
 	h.serviceQueue, h.msgSema = newMultiLevelQueue(
 		msgManager,
@@ -176,6 +188,8 @@ func (h *Handler) Initialize(
 	)
 	h.engine = engine
 	h.validators = validators
+	h.delay = delay
+	return nil
 }
 
 // Context of this Handler
@@ -238,10 +252,23 @@ func (h *Handler) Dispatch() {
 
 // Dispatch a message to the consensus engine.
 func (h *Handler) dispatchMsg(msg message) {
-	if h.closing.GetValue() {
-		h.ctx.Log.Debug("dropping message due to closing:\n%s", msg)
-		h.metrics.dropped.Inc()
-		return
+	// If messages should be delayed to this chain, hold the messages, but check
+	// to see if the chain should be closed at least every [maxSleepDuration].
+	for {
+		if h.closing.GetValue() {
+			h.ctx.Log.Debug("dropping message due to closing:\n%s", msg)
+			h.metrics.dropped.Inc()
+			return
+		}
+		until := time.Until(h.delay.waitUntil)
+		if until <= 0 {
+			break
+		}
+		if until > maxSleepDuration {
+			time.Sleep(maxSleepDuration)
+		} else {
+			time.Sleep(until)
+		}
 	}
 
 	startTime := h.clock.Time()
@@ -261,12 +288,18 @@ func (h *Handler) dispatchMsg(msg message) {
 	switch msg.messageType {
 	case constants.NotifyMsg:
 		err = h.engine.Notify(msg.notification)
-		h.notify.Observe(float64(h.clock.Time().Sub(startTime)))
+		h.metrics.notify.Observe(float64(h.clock.Time().Sub(startTime)))
 	case constants.GossipMsg:
 		err = h.engine.Gossip()
-		h.gossip.Observe(float64(h.clock.Time().Sub(startTime)))
+		h.metrics.gossip.Observe(float64(h.clock.Time().Sub(startTime)))
 	default:
 		err = h.handleValidatorMsg(msg, startTime)
+	}
+
+	if msg.IsPeriodic() {
+		h.ctx.Log.Verbo("Finished sending message to consensus: %s", msg.messageType)
+	} else {
+		h.ctx.Log.Debug("Finished sending message to consensus: %s", msg.messageType)
 	}
 
 	if err != nil {
@@ -509,7 +542,7 @@ func (h *Handler) shutdownDispatch() {
 		go h.toClose()
 	}
 	h.closing.SetValue(true)
-	h.shutdown.Observe(float64(time.Since(startTime)))
+	h.metrics.shutdown.Observe(float64(time.Since(startTime)))
 	close(h.closed)
 }
 
@@ -558,7 +591,7 @@ func (h *Handler) handleValidatorMsg(msg message, startTime time.Time) error {
 	endTime := h.clock.Time()
 	timeConsumed := endTime.Sub(startTime)
 
-	histogram := h.getMSGHistogram(msg.messageType)
+	histogram := h.metrics.getMSGHistogram(msg.messageType)
 	histogram.Observe(float64(timeConsumed))
 
 	h.cpuTracker.UtilizeTime(msg.validatorID, startTime, endTime)

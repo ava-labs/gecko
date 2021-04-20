@@ -15,17 +15,16 @@ var (
 	_ snow.SubnetLookup = &Client{}
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+// Client is a subnet lookup that talks over RPC.
 type Client struct {
 	client gsubnetlookupproto.SubnetLookupClient
 }
 
-// NewClient returns a alias lookup instance connected to a remote alias lookup instance
+// NewClient returns an alias lookup connected to a remote alias lookup
 func NewClient(client gsubnetlookupproto.SubnetLookupClient) *Client {
 	return &Client{client: client}
 }
 
-// SubnetID ...
 func (c *Client) SubnetID(chainID ids.ID) (ids.ID, error) {
 	resp, err := c.client.SubnetID(context.Background(), &gsubnetlookupproto.SubnetIDRequest{
 		ChainID: chainID[:],

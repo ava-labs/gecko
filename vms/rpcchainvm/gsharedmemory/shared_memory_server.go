@@ -12,13 +12,17 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/gsharedmemory/gsharedmemoryproto"
 )
 
-// Server is a messenger that is managed over RPC.
+var (
+	_ gsharedmemoryproto.SharedMemoryServer = &Server{}
+)
+
+// Server is shared memory that is managed over RPC.
 type Server struct {
 	sm atomic.SharedMemory
 	db database.Database
 }
 
-// NewServer returns a vm instance connected to a remote vm instance
+// NewServer returns shared memory connected to remote shared memory
 func NewServer(sm atomic.SharedMemory, db database.Database) *Server {
 	return &Server{
 		sm: sm,
@@ -26,7 +30,6 @@ func NewServer(sm atomic.SharedMemory, db database.Database) *Server {
 	}
 }
 
-// Put ...
 func (s *Server) Put(
 	_ context.Context,
 	req *gsharedmemoryproto.PutRequest,
@@ -65,7 +68,6 @@ func (s *Server) Put(
 	return &gsharedmemoryproto.PutResponse{}, s.sm.Put(peerChainID, elems, batches...)
 }
 
-// Get ...
 func (s *Server) Get(
 	_ context.Context,
 	req *gsharedmemoryproto.GetRequest,
@@ -81,7 +83,6 @@ func (s *Server) Get(
 	}, err
 }
 
-// Indexed ...
 func (s *Server) Indexed(
 	_ context.Context,
 	req *gsharedmemoryproto.IndexedRequest,
@@ -105,7 +106,6 @@ func (s *Server) Indexed(
 	}, err
 }
 
-// Remove ...
 func (s *Server) Remove(
 	_ context.Context,
 	req *gsharedmemoryproto.RemoveRequest,

@@ -12,7 +12,7 @@ func TestAverager(t *testing.T) {
 	halflife := time.Second
 	currentTime := time.Now()
 
-	a := NewAverager(0, halflife, currentTime)
+	a := NewSyncAverager(NewAverager(0, halflife, currentTime))
 	if value := a.Read(); value != 0 {
 		t.Fatalf("wrong value returned. Expected %f ; Returned %f", 0.0, value)
 	}
@@ -28,7 +28,7 @@ func TestAveragerTimeTravel(t *testing.T) {
 	halflife := time.Second
 	currentTime := time.Now()
 
-	a := NewAverager(1, halflife, currentTime)
+	a := NewSyncAverager(NewAverager(1, halflife, currentTime))
 	if value := a.Read(); value != 1 {
 		t.Fatalf("wrong value returned. Expected %f ; Returned %f", 1.0, value)
 	}

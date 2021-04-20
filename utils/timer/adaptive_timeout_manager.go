@@ -5,20 +5,30 @@ package timer
 
 import (
 	"container/heap"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/ava-labs/avalanchego/ids"
+	"github.com/ava-labs/avalanchego/utils/constants"
+	"github.com/ava-labs/avalanchego/utils/math"
+	"github.com/ava-labs/avalanchego/utils/wrappers"
+)
+
+var (
+	errNonPositiveHalflife = errors.New("timeout halflife must be positive")
 )
 
 type adaptiveTimeout struct {
-	index    int           // Index in the wait queue
-	id       ids.ID        // Unique ID of this timeout
-	handler  func()        // Function to execute if timed out
-	duration time.Duration // How long this timeout was set for
-	deadline time.Time     // When this timeout should be fired
+	index    int               // Index in the wait queue
+	id       ids.ID            // Unique ID of this timeout
+	handler  func()            // Function to execute if timed out
+	duration time.Duration     // How long this timeout was set for
+	deadline time.Time         // When this timeout should be fired
+	msgType  constants.MsgType // Type of this outstanding request
 }
 
 // A timeoutQueue implements heap.Interface and holds adaptiveTimeouts.
@@ -48,50 +58,91 @@ func (tq *timeoutQueue) Pop() interface{} {
 	return item
 }
 
-// AdaptiveTimeoutConfig contains the parameters that should be provided to the
+// AdaptiveTimeoutConfig contains the parameters provided to the
 // adaptive timeout manager.
 type AdaptiveTimeoutConfig struct {
 	InitialTimeout time.Duration
 	MinimumTimeout time.Duration
 	MaximumTimeout time.Duration
-	TimeoutInc     time.Duration
-	TimeoutDec     time.Duration
-
-	Namespace  string
-	Registerer prometheus.Registerer
+	// Timeout is [timeoutCoefficient] * average response time
+	// [timeoutCoefficient] must be > 1
+	TimeoutCoefficient float64
+	// Larger halflife --> less volatile timeout
+	// [timeoutHalfLife] must be positive
+	TimeoutHalflife  time.Duration
+	MetricsNamespace string
+	Registerer       prometheus.Registerer
 }
 
 // AdaptiveTimeoutManager is a manager for timeouts.
 type AdaptiveTimeoutManager struct {
-	currentDurationMetric prometheus.Gauge
-
-	minimumTimeout time.Duration
-	maximumTimeout time.Duration
-	timeoutInc     time.Duration
-	timeoutDec     time.Duration
-
-	lock           sync.Mutex
-	currentTimeout time.Duration // Amount of time before a timeout
-	timeoutMap     map[ids.ID]*adaptiveTimeout
-	timeoutQueue   timeoutQueue
-	timer          *Timer // Timer that will fire to clear the timeouts
+	lock sync.Mutex
+	// Tells the time. Can be faked for testing.
+	clock                            Clock
+	networkTimeoutMetric, avgLatency prometheus.Gauge
+	numTimeouts                      prometheus.Counter
+	// Averages the response time from all peers
+	averager math.Averager
+	// Timeout is [timeoutCoefficient] * average response time
+	// [timeoutCoefficient] must be > 1
+	timeoutCoefficient float64
+	minimumTimeout     time.Duration
+	maximumTimeout     time.Duration
+	currentTimeout     time.Duration // Amount of time before a timeout
+	timeoutMap         map[ids.ID]*adaptiveTimeout
+	timeoutQueue       timeoutQueue
+	timer              *Timer // Timer that will fire to clear the timeouts
 }
 
 // Initialize this timeout manager with the provided config
 func (tm *AdaptiveTimeoutManager) Initialize(config *AdaptiveTimeoutConfig) error {
-	tm.currentDurationMetric = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: config.Namespace,
+	tm.networkTimeoutMetric = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: config.MetricsNamespace,
 		Name:      "network_timeout",
-		Help:      "Duration of current network timeouts in nanoseconds",
+		Help:      "Duration of current network timeout in nanoseconds",
 	})
+	tm.avgLatency = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: config.MetricsNamespace,
+		Name:      "avg_network_latency",
+		Help:      "Average network latency in nanoseconds",
+	})
+	tm.numTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: config.MetricsNamespace,
+		Name:      "request_timeouts",
+		Help:      "Number of timed out requests",
+	})
+
+	switch {
+	case config.InitialTimeout > config.MaximumTimeout:
+		return fmt.Errorf("initial timeout (%s) > maximum timeout (%s)", config.InitialTimeout, config.MaximumTimeout)
+	case config.InitialTimeout < config.MinimumTimeout:
+		return fmt.Errorf("initial timeout (%s) < minimum timeout (%s)", config.InitialTimeout, config.MinimumTimeout)
+	case config.TimeoutCoefficient < 1:
+		return fmt.Errorf("timeout coefficient must be >= 1 but got %f", config.TimeoutCoefficient)
+	case config.TimeoutHalflife <= 0:
+		return errNonPositiveHalflife
+	}
+
+	tm.timeoutCoefficient = config.TimeoutCoefficient
+	tm.averager = math.NewAverager(float64(config.InitialTimeout), config.TimeoutHalflife, tm.clock.Time())
 	tm.minimumTimeout = config.MinimumTimeout
 	tm.maximumTimeout = config.MaximumTimeout
-	tm.timeoutInc = config.TimeoutInc
-	tm.timeoutDec = config.TimeoutDec
 	tm.currentTimeout = config.InitialTimeout
 	tm.timeoutMap = make(map[ids.ID]*adaptiveTimeout)
 	tm.timer = NewTimer(tm.Timeout)
-	return config.Registerer.Register(tm.currentDurationMetric)
+
+	errs := &wrappers.Errs{}
+	errs.Add(config.Registerer.Register(tm.networkTimeoutMetric))
+	errs.Add(config.Registerer.Register(tm.avgLatency))
+	errs.Add(config.Registerer.Register(tm.numTimeouts))
+	return errs.Err
+}
+
+// TimeoutDuration returns the current network timeout duration
+func (tm *AdaptiveTimeoutManager) TimeoutDuration() time.Duration {
+	tm.lock.Lock()
+	defer tm.lock.Unlock()
+	return tm.currentTimeout
 }
 
 // Dispatch ...
@@ -100,51 +151,18 @@ func (tm *AdaptiveTimeoutManager) Dispatch() { tm.timer.Dispatch() }
 // Stop executing timeouts
 func (tm *AdaptiveTimeoutManager) Stop() { tm.timer.Stop() }
 
-// Put puts hash into the hash map
-func (tm *AdaptiveTimeoutManager) Put(id ids.ID, handler func()) time.Time {
+// Put registers a timeout for [id]. If the timeout occurs, [timeoutHandler] is called.
+// Returns the time at which the timeout will fire if it is not first
+// removed by calling [tm.Remove].
+func (tm *AdaptiveTimeoutManager) Put(id ids.ID, msgType constants.MsgType, timeoutHandler func()) time.Time {
 	tm.lock.Lock()
 	defer tm.lock.Unlock()
-
-	return tm.put(id, handler)
+	return tm.put(id, msgType, timeoutHandler)
 }
 
-// Remove the item that no longer needs to be there.
-func (tm *AdaptiveTimeoutManager) Remove(id ids.ID) {
-	tm.lock.Lock()
-	defer tm.lock.Unlock()
-
-	currentTime := time.Now()
-
-	tm.remove(id, currentTime)
-}
-
-// Timeout registers a timeout
-func (tm *AdaptiveTimeoutManager) Timeout() {
-	tm.lock.Lock()
-	defer tm.lock.Unlock()
-
-	tm.timeout()
-}
-
-func (tm *AdaptiveTimeoutManager) timeout() {
-	currentTime := time.Now()
-	// removeExpiredHead returns nil once there is nothing left to remove
-	for {
-		timeout := tm.removeExpiredHead(currentTime)
-		if timeout == nil {
-			break
-		}
-
-		// Don't execute a callback with a lock held
-		tm.lock.Unlock()
-		timeout()
-		tm.lock.Lock()
-	}
-	tm.registerTimeout()
-}
-
-func (tm *AdaptiveTimeoutManager) put(id ids.ID, handler func()) time.Time {
-	currentTime := time.Now()
+// Assumes [tm.lock] is held
+func (tm *AdaptiveTimeoutManager) put(id ids.ID, msgType constants.MsgType, handler func()) time.Time {
+	currentTime := tm.clock.Time()
 	tm.remove(id, currentTime)
 
 	timeout := &adaptiveTimeout{
@@ -152,48 +170,39 @@ func (tm *AdaptiveTimeoutManager) put(id ids.ID, handler func()) time.Time {
 		handler:  handler,
 		duration: tm.currentTimeout,
 		deadline: currentTime.Add(tm.currentTimeout),
+		msgType:  msgType,
 	}
 	tm.timeoutMap[id] = timeout
 	heap.Push(&tm.timeoutQueue, timeout)
 
-	tm.registerTimeout()
+	tm.setNextTimeoutTime()
 	return timeout.deadline
 }
 
-func (tm *AdaptiveTimeoutManager) remove(id ids.ID, currentTime time.Time) {
+// Remove the timeout associated with [id].
+// Its timeout handler will not be called.
+func (tm *AdaptiveTimeoutManager) Remove(id ids.ID) {
+	tm.lock.Lock()
+	defer tm.lock.Unlock()
+	tm.remove(id, tm.clock.Time())
+}
+
+// Assumes [tm.lock] is held
+func (tm *AdaptiveTimeoutManager) remove(id ids.ID, now time.Time) {
 	timeout, exists := tm.timeoutMap[id]
 	if !exists {
 		return
 	}
 
-	if timeout.deadline.Before(currentTime) {
-		// This request is being removed because it timed out.
-		if timeout.duration >= tm.currentTimeout {
-			// If the current timeout duration is less than or equal to the
-			// timeout that was triggered, increase the timeout.
-			tm.currentTimeout += tm.timeoutInc
-
-			if tm.currentTimeout > tm.maximumTimeout {
-				// Make sure that we never get stuck in a bad situation
-				tm.currentTimeout = tm.maximumTimeout
-			}
-		}
-	} else {
-		// This request is being removed because it finished successfully.
-		if timeout.duration <= tm.currentTimeout {
-			// If the current timeout duration is greater than or equal to the
-			// timeout that was fulfilled, reduce future timeouts.
-			tm.currentTimeout -= tm.timeoutDec
-
-			if tm.currentTimeout < tm.minimumTimeout {
-				// Make sure that we never get stuck in a bad situation
-				tm.currentTimeout = tm.minimumTimeout
-			}
-		}
+	// Observe the response time to update average network response time
+	// Don't include Get requests in calculation, since an adversary
+	// can cause you to issue a Get request and then cause it to timeout,
+	// increasing your timeout.
+	if timeout.msgType != constants.GetMsg {
+		timeoutRegisteredAt := timeout.deadline.Add(-1 * timeout.duration)
+		latency := now.Sub(timeoutRegisteredAt)
+		tm.observeLatencyAndUpdateTimeout(latency, now)
 	}
-
-	// Make sure the metrics report the current timeouts
-	tm.currentDurationMetric.Set(float64(tm.currentTimeout))
 
 	// Remove the timeout from the map
 	delete(tm.timeoutMap, id)
@@ -202,8 +211,63 @@ func (tm *AdaptiveTimeoutManager) remove(id ids.ID, currentTime time.Time) {
 	heap.Remove(&tm.timeoutQueue, timeout.index)
 }
 
-// Returns true if the head was removed, false otherwise
-func (tm *AdaptiveTimeoutManager) removeExpiredHead(currentTime time.Time) func() {
+// Timeout registers a timeout
+func (tm *AdaptiveTimeoutManager) Timeout() {
+	tm.lock.Lock()
+	defer tm.lock.Unlock()
+	tm.timeout()
+}
+
+// Assumes [tm.lock] is held when called
+// and released after this method returns.
+func (tm *AdaptiveTimeoutManager) timeout() {
+	currentTime := tm.clock.Time()
+	for {
+		// getNextTimeoutHandler returns nil once there is nothing left to remove
+		timeoutHandler := tm.getNextTimeoutHandler(currentTime)
+		if timeoutHandler == nil {
+			break
+		}
+		tm.numTimeouts.Inc()
+
+		// Don't execute a callback with a lock held
+		tm.lock.Unlock()
+		timeoutHandler()
+		tm.lock.Lock()
+	}
+	tm.setNextTimeoutTime()
+}
+
+// ObserveLatency allows the caller to manually register a response latency.
+// We use this to pretend that it a query to a benched validator
+// timed out when actually, we never even sent them a request.
+func (tm *AdaptiveTimeoutManager) ObserveLatency(latency time.Duration) {
+	tm.lock.Lock()
+	defer tm.lock.Unlock()
+	tm.observeLatencyAndUpdateTimeout(latency, tm.clock.Time())
+}
+
+// Add a latency observation to the averager and update the timeout
+// Assumes [tm.lock] is held
+func (tm *AdaptiveTimeoutManager) observeLatencyAndUpdateTimeout(latency time.Duration, now time.Time) {
+	tm.averager.Observe(float64(latency), now)
+	avgLatency := tm.averager.Read()
+	tm.currentTimeout = time.Duration(tm.timeoutCoefficient * avgLatency)
+	if tm.currentTimeout > tm.maximumTimeout {
+		tm.currentTimeout = tm.maximumTimeout
+	} else if tm.currentTimeout < tm.minimumTimeout {
+		tm.currentTimeout = tm.minimumTimeout
+	}
+	// Update the metrics
+	tm.networkTimeoutMetric.Set(float64(tm.currentTimeout))
+	tm.avgLatency.Set(avgLatency)
+}
+
+// Returns the handler function associated with the next timeout.
+// If there are no timeouts, or if the next timeout is after [currentTime],
+// returns nil.
+// Assumes [tm.lock] is held
+func (tm *AdaptiveTimeoutManager) getNextTimeoutHandler(currentTime time.Time) func() {
 	if tm.timeoutQueue.Len() == 0 {
 		return nil
 	}
@@ -216,14 +280,16 @@ func (tm *AdaptiveTimeoutManager) removeExpiredHead(currentTime time.Time) func(
 	return nextTimeout.handler
 }
 
-func (tm *AdaptiveTimeoutManager) registerTimeout() {
+// Calculate the time of the next timeout and set
+// the timer to fire at that time.
+func (tm *AdaptiveTimeoutManager) setNextTimeoutTime() {
 	if tm.timeoutQueue.Len() == 0 {
 		// There are no pending timeouts
 		tm.timer.Cancel()
 		return
 	}
 
-	currentTime := time.Now()
+	currentTime := tm.clock.Time()
 	nextTimeout := tm.timeoutQueue[0]
 	timeToNextTimeout := nextTimeout.deadline.Sub(currentTime)
 	tm.timer.SetTimeoutIn(timeToNextTimeout)

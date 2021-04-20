@@ -19,22 +19,22 @@ var (
 )
 
 type TestStorage struct {
-	T                 *testing.T
-	CantGet, CantEdge bool
-	GetF              func(ids.ID) (avalanche.Vertex, error)
-	EdgeF             func() []ids.ID
+	T                    *testing.T
+	CantGetVtx, CantEdge bool
+	GetVtxF              func(ids.ID) (avalanche.Vertex, error)
+	EdgeF                func() []ids.ID
 }
 
 func (s *TestStorage) Default(cant bool) {
-	s.CantGet = cant
+	s.CantGetVtx = cant
 	s.CantEdge = cant
 }
 
-func (s *TestStorage) Get(id ids.ID) (avalanche.Vertex, error) {
-	if s.GetF != nil {
-		return s.GetF(id)
+func (s *TestStorage) GetVtx(id ids.ID) (avalanche.Vertex, error) {
+	if s.GetVtxF != nil {
+		return s.GetVtxF(id)
 	}
-	if s.CantGet && s.T != nil {
+	if s.CantGetVtx && s.T != nil {
 		s.T.Fatal(errGet)
 	}
 	return nil, errGet

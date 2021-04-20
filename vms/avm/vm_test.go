@@ -252,11 +252,8 @@ func GenesisVMWithArgs(tb testing.TB, args *BuildGenesisArgs) ([]byte, chan comm
 	// The caller of this function is responsible for unlocking.
 	ctx.Lock.Lock()
 
-	userKeystore, err := keystore.CreateTestKeystore()
-	if err != nil {
-		tb.Fatal(err)
-	}
-	if err := userKeystore.AddUser(username, password); err != nil {
+	userKeystore := keystore.New(logging.NoLog{}, memdb.New())
+	if err := userKeystore.CreateUser(username, password); err != nil {
 		tb.Fatal(err)
 	}
 	ctx.Keystore = userKeystore.NewBlockchainKeyStore(ctx.ChainID)
@@ -600,7 +597,7 @@ func TestIssueTx(t *testing.T) {
 	}
 	ctx.Lock.Lock()
 
-	if txs := vm.Pending(); len(txs) != 1 {
+	if txs := vm.PendingTxs(); len(txs) != 1 {
 		t.Fatalf("Should have returned %d tx(s)", 1)
 	}
 }
@@ -799,7 +796,7 @@ func TestIssueDependentTx(t *testing.T) {
 	}
 	ctx.Lock.Lock()
 
-	if txs := vm.Pending(); len(txs) != 2 {
+	if txs := vm.PendingTxs(); len(txs) != 2 {
 		t.Fatalf("Should have returned %d tx(s)", 2)
 	}
 }
@@ -1154,7 +1151,7 @@ func TestTxCached(t *testing.T) {
 	newTx := NewTx(t, genesisBytes, vm)
 	txBytes := newTx.Bytes()
 
-	_, err := vm.Parse(txBytes)
+	_, err := vm.ParseTx(txBytes)
 	assert.NoError(t, err)
 
 	db := mockdb.New()
@@ -1166,7 +1163,7 @@ func TestTxCached(t *testing.T) {
 	vm.state.state.DB = db
 	vm.state.state.Cache.Flush()
 
-	_, err = vm.Parse(txBytes)
+	_, err = vm.ParseTx(txBytes)
 	assert.NoError(t, err)
 	assert.False(t, *called, "shouldn't have called the DB")
 }
@@ -1184,7 +1181,7 @@ func TestTxNotCached(t *testing.T) {
 	newTx := NewTx(t, genesisBytes, vm)
 	txBytes := newTx.Bytes()
 
-	_, err := vm.Parse(txBytes)
+	_, err := vm.ParseTx(txBytes)
 	assert.NoError(t, err)
 
 	db := mockdb.New()
@@ -1198,7 +1195,7 @@ func TestTxNotCached(t *testing.T) {
 	vm.state.uniqueTx.Flush()
 	vm.state.state.Cache.Flush()
 
-	_, err = vm.Parse(txBytes)
+	_, err = vm.ParseTx(txBytes)
 	assert.NoError(t, err)
 	assert.True(t, *called, "should have called the DB")
 }
@@ -1281,7 +1278,7 @@ func TestTxVerifyAfterIssueTx(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSecondTx, err := vm.Parse(secondTx.Bytes())
+	parsedSecondTx, err := vm.ParseTx(secondTx.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1302,7 +1299,7 @@ func TestTxVerifyAfterIssueTx(t *testing.T) {
 	}
 	ctx.Lock.Lock()
 
-	txs := vm.Pending()
+	txs := vm.PendingTxs()
 	if len(txs) != 1 {
 		t.Fatalf("Should have returned %d tx(s)", 1)
 	}
@@ -1391,7 +1388,7 @@ func TestTxVerifyAfterGet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSecondTx, err := vm.Parse(secondTx.Bytes())
+	parsedSecondTx, err := vm.ParseTx(secondTx.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1401,7 +1398,7 @@ func TestTxVerifyAfterGet(t *testing.T) {
 	if _, err := vm.IssueTx(firstTx.Bytes()); err != nil {
 		t.Fatal(err)
 	}
-	parsedFirstTx, err := vm.Get(firstTx.ID())
+	parsedFirstTx, err := vm.GetTx(firstTx.ID())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1524,7 +1521,7 @@ func TestTxVerifyAfterVerifyAncestorTx(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSecondTx, err := vm.Parse(secondTx.Bytes())
+	parsedSecondTx, err := vm.ParseTx(secondTx.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1537,7 +1534,7 @@ func TestTxVerifyAfterVerifyAncestorTx(t *testing.T) {
 	if _, err := vm.IssueTx(firstTxDescendant.Bytes()); err != nil {
 		t.Fatal(err)
 	}
-	parsedFirstTx, err := vm.Get(firstTx.ID())
+	parsedFirstTx, err := vm.GetTx(firstTx.ID())
 	if err != nil {
 		t.Fatal(err)
 	}

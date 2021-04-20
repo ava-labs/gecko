@@ -1,7 +1,7 @@
 # {{ ansible_managed }}
 
 [Unit]
-Description=Avalanche test node
+Description=AvalancheGo node
 Documentation=https://docs.avax.network/
 After=network.target
 StartLimitIntervalSec=0
@@ -12,8 +12,12 @@ WorkingDirectory={{ avalanche_daemon_home_dir }}
 Restart=always
 RestartSec=1
 User={{ avalanche_daemon_user }}
-ExecStart={{ bindir }}/avalanche \
-            --public-ip="{{ ansible_facts.default_ipv4.address }}" \
+ExecStart={{ bindir }}/{{ avalanche_binary | basename }} \
+{% if avalanche_daemon_dynamic_public_ip %}
+            --dynamic-public-ip="{{ avalanche_daemon_dynamic_public_ip }}" \
+{% else %}
+            --public-ip="{{ avalanche_daemon_public_ip }}" \
+{% endif %}
             --http-host="{{ avalanche_daemon_http_host }}" \
             --db-dir="{{ avalanche_daemon_db_dir }}" \
             --plugin-dir="{{ avalanche_daemon_plugin_dir }}" \

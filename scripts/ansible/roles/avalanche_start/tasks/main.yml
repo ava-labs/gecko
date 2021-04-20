@@ -1,4 +1,5 @@
 - name: Start node
+  # noqa 301
   shell:
     nohup {{ avalanche_binary }}
       --network-id="{{ network_id }}"

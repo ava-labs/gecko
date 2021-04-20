@@ -38,17 +38,20 @@ func (sb *StandardBlock) initialize(vm *VM, bytes []byte) error {
 //
 // This function also sets onAcceptDB database if the verification passes.
 func (sb *StandardBlock) Verify() error {
+	if err := sb.SingleDecisionBlock.Verify(); err != nil {
+		if err := sb.Reject(); err != nil {
+			sb.vm.Ctx.Log.Error("failed to reject standard block %s due to %s", sb.ID(), err)
+		}
+		return err
+	}
+
 	parentBlock := sb.parentBlock()
 	// StandardBlock is not a modifier on a proposal block, so its parent must
 	// be a decision.
 	parent, ok := parentBlock.(decision)
 	if !ok {
-		if err := sb.Reject(); err == nil {
-			if err := sb.vm.DB.Commit(); err != nil {
-				return fmt.Errorf("failed to commit VM's database: %w", err)
-			}
-		} else {
-			sb.vm.DB.Abort()
+		if err := sb.Reject(); err != nil {
+			sb.vm.Ctx.Log.Error("failed to reject standard block %s due to %s", sb.ID(), err)
 		}
 		return errInvalidBlockType
 	}
@@ -66,12 +69,8 @@ func (sb *StandardBlock) Verify() error {
 		onAccept, err := utx.SemanticVerify(sb.vm, sb.onAcceptDB, tx)
 		if err != nil {
 			sb.vm.droppedTxCache.Put(txID, err.Error()) // cache tx as dropped
-			if err := sb.Reject(); err == nil {
-				if err := sb.vm.DB.Commit(); err != nil {
-					return fmt.Errorf("failed to commit VM's database: %w", err)
-				}
-			} else {
-				sb.vm.DB.Abort()
+			if err := sb.Reject(); err != nil {
+				sb.vm.Ctx.Log.Error("failed to reject standard block %s due to %s", sb.ID(), err)
 			}
 			return err
 		}
@@ -106,6 +105,8 @@ func (sb *StandardBlock) Verify() error {
 
 // Reject implements the snowman.Block interface
 func (sb *StandardBlock) Reject() error {
+	sb.vm.Ctx.Log.Verbo("Rejecting Standard Block %s at height %d with parent %s", sb.ID(), sb.Height(), sb.ParentID())
+
 	for _, tx := range sb.Txs {
 		if err := sb.vm.mempool.IssueTx(tx); err != nil {
 			sb.vm.Ctx.Log.Debug("failed to reissue tx %q due to: %s", tx.ID(), err)

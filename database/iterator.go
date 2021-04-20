@@ -7,7 +7,7 @@
 
 package database
 
-// Iterator iterates over a database's key/value pairs in ascending key order.
+// Iterator iterates over a database's key/value pairs.
 //
 // When it encounters an error any seek will return false and will yield no key/
 // value pairs. The error can be queried by calling the Error method. Calling
@@ -18,7 +18,7 @@ package database
 // is safe to use multiple iterators concurrently.
 type Iterator interface {
 	// Next moves the iterator to the next key/value pair. It returns whether
-	// the iterator is exhausted.
+	// the iterator successfully moved to a new key/value pair.
 	Next() bool
 
 	// Error returns any accumulated error. Exhausting all the key/value pairs
@@ -38,21 +38,20 @@ type Iterator interface {
 
 // Iteratee wraps the NewIterator methods of a backing data store.
 type Iteratee interface {
-	// NewIterator creates a binary-alphabetical iterator over the entire
-	// keyspace contained within the key-value database.
+	// NewIterator creates an iterator over the entire keyspace contained within
+	// the key-value database.
 	NewIterator() Iterator
 
-	// NewIteratorWithStart creates a binary-alphabetical iterator over a subset
-	// of database content starting at a particular initial key (or after, if it
-	// does not exist).
+	// NewIteratorWithStart creates an iterator over a subset of database
+	// content starting at a particular initial key.
 	NewIteratorWithStart(start []byte) Iterator
 
-	// NewIteratorWithPrefix creates a binary-alphabetical iterator over a
-	// subset of database content with a particular key prefix.
+	// NewIteratorWithPrefix creates an iterator over a subset of database
+	// content with a particular key prefix.
 	NewIteratorWithPrefix(prefix []byte) Iterator
 
-	// NewIteratorWithStartAndPrefix creates a binary-alphabetical iterator over
-	// a subset of database content with a particular key prefix starting at a
-	// specified key.
+	// NewIteratorWithStartAndPrefix creates an iterator over a subset of
+	// database content with a particular key prefix starting at a specified
+	// key.
 	NewIteratorWithStartAndPrefix(start, prefix []byte) Iterator
 }

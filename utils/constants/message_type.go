@@ -35,47 +35,47 @@ const (
 func (t MsgType) String() string {
 	switch t {
 	case NullMsg:
-		return "Null Message"
+		return "Null"
 	case GetAcceptedFrontierMsg:
-		return "Get Accepted Frontier Message"
+		return "Get Accepted Frontier"
 	case AcceptedFrontierMsg:
-		return "Accepted Frontier Message"
+		return "Accepted Frontier"
 	case GetAcceptedFrontierFailedMsg:
-		return "Get Accepted Frontier Failed Message"
+		return "Get Accepted Frontier Failed"
 	case GetAcceptedMsg:
-		return "Get Accepted Message"
+		return "Get Accepted"
 	case AcceptedMsg:
-		return "Accepted Message"
+		return "Accepted"
 	case GetAcceptedFailedMsg:
-		return "Get Accepted Failed Message"
+		return "Get Accepted Failed"
 	case GetMsg:
-		return "Get Message"
+		return "Get"
 	case GetAncestorsMsg:
-		return "Get Ancestors Message"
+		return "Get Ancestors"
 	case GetAncestorsFailedMsg:
-		return "Get Ancestors Failed Message"
+		return "Get Ancestors Failed"
 	case PutMsg:
-		return "Put Message"
+		return "Put"
 	case MultiPutMsg:
-		return "MultiPut Message"
+		return "MultiPut"
 	case GetFailedMsg:
-		return "Get Failed Message"
+		return "Get Failed"
 	case PushQueryMsg:
-		return "Push Query Message"
+		return "Push Query"
 	case PullQueryMsg:
-		return "Pull Query Message"
+		return "Pull Query"
 	case ChitsMsg:
-		return "Chits Message"
+		return "Chits"
 	case QueryFailedMsg:
-		return "Query Failed Message"
+		return "Query Failed"
 	case ConnectedMsg:
-		return "Connected Message"
+		return "Connected"
 	case DisconnectedMsg:
-		return "Disconnected Message"
+		return "Disconnected"
 	case NotifyMsg:
-		return "Notify Message"
+		return "Notify"
 	case GossipMsg:
-		return "Gossip Message"
+		return "Gossip"
 	default:
 		return fmt.Sprintf("Unknown Message Type: %d", t)
 	}

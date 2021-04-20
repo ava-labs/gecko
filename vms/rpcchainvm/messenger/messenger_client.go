@@ -15,12 +15,11 @@ type Client struct {
 	client messengerproto.MessengerClient
 }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns a client that is connected to a remote channel
 func NewClient(client messengerproto.MessengerClient) *Client {
 	return &Client{client: client}
 }
 
-// Notify ...
 func (c *Client) Notify(msg common.Message) error {
 	_, err := c.client.Notify(context.Background(), &messengerproto.NotifyRequest{
 		Message: uint32(msg),

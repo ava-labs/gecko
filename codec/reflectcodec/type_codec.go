@@ -6,6 +6,7 @@ package reflectcodec
 import (
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 
 	"github.com/ava-labs/avalanchego/codec"
@@ -55,12 +56,12 @@ type TypeCodec interface {
 // 7) nil slices are marshaled as empty slices
 type genericCodec struct {
 	typer       TypeCodec
-	maxSliceLen int
+	maxSliceLen uint32
 	fielder     StructFielder
 }
 
 // New returns a new, concurrency-safe codec
-func New(typer TypeCodec, tagName string, maxSliceLen int) codec.Codec {
+func New(typer TypeCodec, tagName string, maxSliceLen uint32) codec.Codec {
 	return &genericCodec{
 		typer:       typer,
 		maxSliceLen: maxSliceLen,
@@ -80,7 +81,7 @@ func (c *genericCodec) MarshalInto(value interface{}, p *wrappers.Packer) error 
 // marshal writes the byte representation of [value] to [p]
 // [value]'s underlying value must not be a nil pointer or interface
 // c.lock should be held for the duration of this function
-func (c *genericCodec) marshal(value reflect.Value, p *wrappers.Packer, maxSliceLen int) error {
+func (c *genericCodec) marshal(value reflect.Value, p *wrappers.Packer, maxSliceLen uint32) error {
 	valueKind := value.Kind()
 	switch valueKind {
 	case reflect.Interface, reflect.Ptr, reflect.Invalid:
@@ -134,7 +135,7 @@ func (c *genericCodec) marshal(value reflect.Value, p *wrappers.Packer, maxSlice
 		return p.Err
 	case reflect.Slice:
 		numElts := value.Len() // # elements in the slice/array. 0 if this slice is nil.
-		if numElts > maxSliceLen {
+		if uint32(numElts) > maxSliceLen {
 			return fmt.Errorf("slice length, %d, exceeds maximum length, %d",
 				numElts,
 				maxSliceLen)
@@ -162,7 +163,7 @@ func (c *genericCodec) marshal(value reflect.Value, p *wrappers.Packer, maxSlice
 			p.PackFixedBytes(sliceVal.Bytes())
 			return p.Err
 		}
-		if numElts > c.maxSliceLen {
+		if uint32(numElts) > c.maxSliceLen {
 			return fmt.Errorf("array length, %d, exceeds maximum length, %d", numElts, c.maxSliceLen)
 		}
 		for i := 0; i < numElts; i++ { // Process each element in the array
@@ -212,7 +213,7 @@ func (c *genericCodec) Unmarshal(bytes []byte, dest interface{}) error {
 
 // Unmarshal from p.Bytes into [value]. [value] must be addressable.
 // c.lock should be held for the duration of this function
-func (c *genericCodec) unmarshal(p *wrappers.Packer, value reflect.Value, maxSliceLen int) error {
+func (c *genericCodec) unmarshal(p *wrappers.Packer, value reflect.Value, maxSliceLen uint32) error {
 	switch value.Kind() {
 	case reflect.Uint8:
 		value.SetUint(uint64(p.UnpackByte()))
@@ -269,15 +270,22 @@ func (c *genericCodec) unmarshal(p *wrappers.Packer, value reflect.Value, maxSli
 		}
 		return nil
 	case reflect.Slice:
-		numElts := int(p.UnpackInt())
+		numElts32 := p.UnpackInt()
 		if p.Err != nil {
 			return fmt.Errorf("couldn't unmarshal slice: %w", p.Err)
 		}
-		if numElts > maxSliceLen {
+		if numElts32 > maxSliceLen {
 			return fmt.Errorf("array length, %d, exceeds maximum length, %d",
-				numElts,
+				numElts32,
 				maxSliceLen)
 		}
+		if numElts32 > math.MaxInt32 {
+			return fmt.Errorf("array length, %d, exceeds maximum length, %d",
+				numElts32,
+				math.MaxInt32)
+		}
+		numElts := int(numElts32)
+
 		// If this is a slice of bytes, manually unpack the bytes rather
 		// than calling unmarshal on each byte. This improves performance.
 		if elemKind := value.Type().Elem().Kind(); elemKind == reflect.Uint8 {

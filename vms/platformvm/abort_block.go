@@ -22,15 +22,17 @@ type Abort struct {
 //
 // This function also sets onAcceptDB database if the verification passes.
 func (a *Abort) Verify() error {
+	if err := a.DoubleDecisionBlock.Verify(); err != nil {
+		if err := a.Reject(); err != nil {
+			a.vm.Ctx.Log.Error("failed to reject abort block %s due to %s", a.ID(), err)
+		}
+		return err
+	}
 	parent, ok := a.parentBlock().(*ProposalBlock)
 	// Abort is a decision, so its parent must be a proposal
 	if !ok {
-		if err := a.Reject(); err == nil {
-			if err := a.vm.DB.Commit(); err != nil {
-				return fmt.Errorf("failed to commit database while rejecting block %s: %w", a.ID(), err)
-			}
-		} else {
-			a.vm.DB.Abort()
+		if err := a.Reject(); err != nil {
+			a.vm.Ctx.Log.Error("failed to reject abort block %s due to %s", a.ID(), err)
 		}
 		return errInvalidBlockType
 	}

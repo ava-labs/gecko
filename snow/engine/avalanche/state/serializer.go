@@ -30,6 +30,8 @@ var (
 	errWrongChainID  = errors.New("wrong ChainID in vertex")
 )
 
+var _ vertex.Manager = &Serializer{}
+
 // Serializer manages the state of multiple vertices
 type Serializer struct {
 	ctx   *snow.Context
@@ -58,12 +60,12 @@ func (s *Serializer) Initialize(ctx *snow.Context, vm vertex.DAGVM, db database.
 }
 
 // Parse implements the avalanche.State interface
-func (s *Serializer) Parse(b []byte) (avalanche.Vertex, error) {
+func (s *Serializer) ParseVtx(b []byte) (avalanche.Vertex, error) {
 	return newUniqueVertex(s, b)
 }
 
 // Build implements the avalanche.State interface
-func (s *Serializer) Build(
+func (s *Serializer) BuildVtx(
 	epoch uint32,
 	parentIDs []ids.ID,
 	txs []snowstorm.Tx,
@@ -105,7 +107,7 @@ func (s *Serializer) Build(
 }
 
 // Get implements the avalanche.State interface
-func (s *Serializer) Get(vtxID ids.ID) (avalanche.Vertex, error) { return s.getVertex(vtxID) }
+func (s *Serializer) GetVtx(vtxID ids.ID) (avalanche.Vertex, error) { return s.getVertex(vtxID) }
 
 // Edge implements the avalanche.State interface
 func (s *Serializer) Edge() []ids.ID { return s.edge.List() }

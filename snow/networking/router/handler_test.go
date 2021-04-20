@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/snow"
@@ -38,7 +39,7 @@ func TestHandlerDropsTimedOutMessages(t *testing.T) {
 	if err := vdrs.AddWeight(vdr0, 1); err != nil {
 		t.Fatal(err)
 	}
-	handler.Initialize(
+	err := handler.Initialize(
 		&engine,
 		vdrs,
 		nil,
@@ -48,7 +49,9 @@ func TestHandlerDropsTimedOutMessages(t *testing.T) {
 		DefaultStakerPortion,
 		"",
 		prometheus.NewRegistry(),
+		&Delay{},
 	)
+	assert.NoError(t, err)
 
 	currentTime := time.Now()
 	handler.clock.Set(currentTime)
@@ -81,7 +84,7 @@ func TestHandlerDoesntDrop(t *testing.T) {
 
 	handler := &Handler{}
 	validators := validators.NewSet()
-	handler.Initialize(
+	err := handler.Initialize(
 		&engine,
 		validators,
 		nil,
@@ -91,7 +94,9 @@ func TestHandlerDoesntDrop(t *testing.T) {
 		DefaultStakerPortion,
 		"",
 		prometheus.NewRegistry(),
+		&Delay{},
 	)
+	assert.NoError(t, err)
 
 	handler.GetAcceptedFrontier(ids.ShortID{}, 1, time.Time{})
 	go handler.Dispatch()
@@ -117,7 +122,7 @@ func TestHandlerClosesOnError(t *testing.T) {
 	}
 
 	handler := &Handler{}
-	handler.Initialize(
+	err := handler.Initialize(
 		&engine,
 		validators.NewSet(),
 		nil,
@@ -127,7 +132,10 @@ func TestHandlerClosesOnError(t *testing.T) {
 		DefaultStakerPortion,
 		"",
 		prometheus.NewRegistry(),
+		&Delay{},
 	)
+	assert.NoError(t, err)
+
 	handler.clock.Set(time.Now())
 
 	handler.toClose = func() {
@@ -160,7 +168,7 @@ func TestHandlerDropsGossipDuringBootstrapping(t *testing.T) {
 	}
 
 	handler := &Handler{}
-	handler.Initialize(
+	err := handler.Initialize(
 		&engine,
 		validators.NewSet(),
 		nil,
@@ -170,7 +178,10 @@ func TestHandlerDropsGossipDuringBootstrapping(t *testing.T) {
 		DefaultStakerPortion,
 		"",
 		prometheus.NewRegistry(),
+		&Delay{},
 	)
+	assert.NoError(t, err)
+
 	handler.clock.Set(time.Now())
 
 	go handler.Dispatch()

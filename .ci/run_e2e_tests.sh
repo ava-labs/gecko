@@ -3,7 +3,8 @@ SRC_PATH=$(dirname "${SCRIPTS_PATH}")
 
 # Early auth to avoid limit rating
 if [[ -z ${DOCKER_USERNAME} ]]; then
-    echo "No Auth provided"
+    echo "Skipping E2E Tests for untrusted build"
+    exit 0
 else
     echo "$DOCKER_PASS" | docker login --username "$DOCKER_USERNAME" --password-stdin
 fi
@@ -16,16 +17,8 @@ AVALANCHE_IMAGE="$AVALANCHE_IMAGE_REPO:$AVALANCHE_IMAGE_TAG"
 echo "Using Avalanche Image: $AVALANCHE_IMAGE"
 
 DOCKER_REPO="avaplatform"
-BYZANTINE_IMAGE="$DOCKER_REPO/avalanche-byzantine:v0.1.5-rc.1"
-TEST_SUITE_IMAGE="$DOCKER_REPO/avalanche-testing:v0.10.5-rc.1"
-
-# If Docker Credentials are not available skip the Byzantine Tests
-if [[ -z ${DOCKER_USERNAME} ]]; then
-    echo "Skipping Byzantine Tests because Docker Credentials were not present."
-    BYZANTINE_IMAGE=""
-else
-    docker pull "${BYZANTINE_IMAGE}"
-fi
+BYZANTINE_IMAGE="$DOCKER_REPO/avalanche-byzantine:v0.2.0-rc.1"
+TEST_SUITE_IMAGE="$DOCKER_REPO/avalanche-testing:v0.11.0-rc.2"
 
 # Kurtosis Environment Parameters
 KURTOSIS_CORE_CHANNEL="1.0.3"
@@ -33,6 +26,7 @@ INITIALIZER_IMAGE="kurtosistech/kurtosis-core_initializer:${KURTOSIS_CORE_CHANNE
 API_IMAGE="kurtosistech/kurtosis-core_api:${KURTOSIS_CORE_CHANNEL}"
 PARALLELISM=4
 
+docker pull "${BYZANTINE_IMAGE}"
 docker pull "$TEST_SUITE_IMAGE"
 
 SUITE_EXECUTION_VOLUME="avalanche-test-suite_${AVALANCHE_IMAGE_TAG}_$(date +%s)"

@@ -6,6 +6,7 @@ package wrappers
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 
 	"github.com/ava-labs/avalanchego/utils"
@@ -501,4 +502,20 @@ func TryPackIPList(packer *Packer, valIntf interface{}) {
 // TryUnpackIPList attempts to unpack the value as an ip port pair list
 func TryUnpackIPList(packer *Packer) interface{} {
 	return packer.UnpackIPs()
+}
+
+// PackLong returns the byte representation of a uint64
+func PackLong(val uint64) []byte {
+	bytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(bytes, val)
+	return bytes
+}
+
+// PackLong returns the byte representation of a uint64.
+// Returns an error if len(bytes) != 8
+func UnpackLong(bytes []byte) (uint64, error) {
+	if len(bytes) != 8 {
+		return 0, fmt.Errorf("expected len(bytes) to be 8 but is %d", len(bytes))
+	}
+	return binary.BigEndian.Uint64(bytes), nil
 }

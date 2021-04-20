@@ -38,6 +38,8 @@ type ProposalBlock struct {
 
 // Accept implements the snowman.Block interface
 func (pb *ProposalBlock) Accept() error {
+	pb.vm.Ctx.Log.Verbo("Accepting Proposal Block %s at height %d with parent %s", pb.ID(), pb.Height(), pb.ParentID())
+
 	pb.SetStatus(choices.Accepted)
 	pb.VM.LastAcceptedID = pb.ID()
 	return nil
@@ -45,6 +47,8 @@ func (pb *ProposalBlock) Accept() error {
 
 // Reject implements the snowman.Block interface
 func (pb *ProposalBlock) Reject() error {
+	pb.vm.Ctx.Log.Verbo("Rejecting Proposal Block %s at height %d with parent %s", pb.ID(), pb.Height(), pb.ParentID())
+
 	if err := pb.vm.mempool.IssueTx(&pb.Tx); err != nil {
 		pb.vm.Ctx.Log.Verbo("failed to reissue tx %q due to: %s", pb.Tx.ID(), err)
 	}
@@ -105,6 +109,13 @@ func (pb *ProposalBlock) onAbort() (*versiondb.Database, func() error) {
 //
 // If this block is valid, this function also sets pas.onCommit and pas.onAbort.
 func (pb *ProposalBlock) Verify() error {
+	if err := pb.CommonBlock.Verify(); err != nil {
+		if err := pb.Reject(); err != nil {
+			pb.vm.Ctx.Log.Error("failed to reject proposal block %s due to %s", pb.ID(), err)
+		}
+		return err
+	}
+
 	tx, ok := pb.Tx.UnsignedTx.(UnsignedProposalTx)
 	if !ok {
 		return errWrongTxType
@@ -115,12 +126,8 @@ func (pb *ProposalBlock) Verify() error {
 	// The parent of a proposal block (ie this block) must be a decision block
 	parent, ok := parentIntf.(decision)
 	if !ok {
-		if err := pb.Reject(); err == nil {
-			if err := pb.vm.DB.Commit(); err != nil {
-				return fmt.Errorf("couldn't commit VM's database: %w", err)
-			}
-		} else {
-			pb.vm.DB.Abort()
+		if err := pb.Reject(); err != nil {
+			pb.vm.Ctx.Log.Error("failed to reject proposal block %s due to %s", pb.ID(), err)
 		}
 		return errInvalidBlockType
 	}
@@ -137,12 +144,8 @@ func (pb *ProposalBlock) Verify() error {
 		// If this block's transaction proposes to advance the timestamp, the transaction may fail
 		// verification now but be valid in the future, so don't (permanently) mark the block as rejected.
 		if !err.Temporary() {
-			if err := pb.Reject(); err == nil {
-				if err := pb.vm.DB.Commit(); err != nil {
-					return fmt.Errorf("couldn't commit VM's database: %w", err)
-				}
-			} else {
-				pb.vm.DB.Abort()
+			if err := pb.Reject(); err != nil {
+				pb.vm.Ctx.Log.Error("failed to reject proposal block %s due to %s", pb.ID(), err)
 			}
 		}
 		return err

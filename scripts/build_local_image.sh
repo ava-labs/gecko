@@ -14,4 +14,4 @@ FULL_COMMIT_HASH="$(git --git-dir="$AVALANCHE_PATH/.git" rev-parse HEAD)"
 COMMIT_HASH="${FULL_COMMIT_HASH::8}"
 
 echo "Building Docker Image: $DOCKERHUB_REPO:$COMMIT_HASH"
-docker build -t "$DOCKERHUB_REPO:$COMMIT_HASH" "$AVALANCHE_PATH" -f "$AVALANCHE_PATH/Dockerfile"
+docker build -t "$DOCKERHUB_REPO:$COMMIT_HASH" "$AVALANCHE_PATH" -f "$AVALANCHE_PATH/Dockerfile" --build-arg AVALANCHEGO_COMMIT="$FULL_COMMIT_HASH"

@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,13 +15,14 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 
+	"github.com/ava-labs/avalanchego/utils/logging"
 	"github.com/ava-labs/avalanchego/utils/password"
 )
 
 var (
 	testPassword              = "password!@#$%$#@!"
 	hashedPassword            = password.Hash{}
-	unAuthorizedResponseRegex = "^{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"(.*)\"},\"id\":1}$"
+	unAuthorizedResponseRegex = "^{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"(.*)\"},\"id\":1}"
 )
 
 func init() {
@@ -34,36 +37,31 @@ var (
 )
 
 func TestNewTokenWrongPassword(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
-	_, err := auth.newToken("", []string{"endpoint1, endpoint2"})
+	_, err := auth.NewToken("", defaultTokenLifespan, []string{"endpoint1, endpoint2"})
 	assert.Error(t, err, "should have failed because password is wrong")
 
-	_, err = auth.newToken("notThePassword", []string{"endpoint1, endpoint2"})
+	_, err = auth.NewToken("notThePassword", defaultTokenLifespan, []string{"endpoint1, endpoint2"})
 	assert.Error(t, err, "should have failed because password is wrong")
 }
 
 func TestNewTokenHappyPath(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword).(*auth)
+
 	now := time.Now()
 	auth.clock.Set(now)
 
 	// Make a token
 	endpoints := []string{"endpoint1", "endpoint2", "endpoint3"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
 	// Parse the token
 	token, err := jwt.ParseWithClaims(tokenStr, &endpointClaims{}, func(*jwt.Token) (interface{}, error) {
 		auth.lock.RLock()
 		defer auth.lock.RUnlock()
-		return auth.Password.Password[:], nil
+		return auth.password.Password[:], nil
 	})
 	assert.NoError(t, err, "couldn't parse new token")
 
@@ -71,19 +69,16 @@ func TestNewTokenHappyPath(t *testing.T) {
 	assert.True(t, ok, "expected auth token's claims to be type endpointClaims but is different type")
 	assert.ElementsMatch(t, endpoints, claims.Endpoints, "token has wrong endpoint claims")
 
-	shouldExpireAt := now.Add(TokenLifespan).Unix()
+	shouldExpireAt := now.Add(defaultTokenLifespan).Unix()
 	assert.Equal(t, shouldExpireAt, claims.ExpiresAt, "token expiration time is wrong")
 }
 
 func TestTokenHasWrongSig(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword).(*auth)
 
 	// Make a token
 	endpoints := []string{"endpoint1", "endpoint2", "endpoint3"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
 	// Try to parse the token using the wrong password
@@ -104,83 +99,52 @@ func TestTokenHasWrongSig(t *testing.T) {
 }
 
 func TestChangePassword(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword).(*auth)
 
 	password2 := "fejhkefjhefjhefhje" // #nosec G101
 	var err error
 
-	err = auth.changePassword("", password2)
+	err = auth.ChangePassword("", password2)
 	assert.Error(t, err, "should have failed because old password is wrong")
 
-	err = auth.changePassword("notThePassword", password2)
+	err = auth.ChangePassword("notThePassword", password2)
 	assert.Error(t, err, "should have failed because old password is wrong")
 
-	err = auth.changePassword(testPassword, "")
+	err = auth.ChangePassword(testPassword, "")
 	assert.Error(t, err, "should have failed because new password is empty")
 
-	err = auth.changePassword(testPassword, password2)
+	err = auth.ChangePassword(testPassword, password2)
 	assert.NoError(t, err, "should have succeeded")
-	assert.True(t, auth.Password.Check(password2), "password should have been changed")
+	assert.True(t, auth.password.Check(password2), "password should have been changed")
 
 	password3 := "ufwhwohwfohawfhwdwd" // #nosec G101
 
-	err = auth.changePassword(testPassword, password3)
+	err = auth.ChangePassword(testPassword, password3)
 	assert.Error(t, err, "should have failed because old password is wrong")
 
-	err = auth.changePassword(password2, password3)
+	err = auth.ChangePassword(password2, password3)
 	assert.NoError(t, err, "should have succeeded")
-}
-
-func TestGetToken(t *testing.T) {
-	var err error
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:9650/ext/auth", strings.NewReader(""))
-	_, err = getToken(req)
-	assert.Error(t, err, "should have failed because no auth token given")
-
-	req.Header.Add("Authorization", "")
-	_, err = getToken(req)
-	assert.Error(t, err, "should have failed because auth token invalid")
-
-	req.Header.Set("Authorization", "this isn't an auth token!")
-	_, err = getToken(req)
-	assert.Error(t, err, "should have failed because auth token invalid")
-
-	wellFormedToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJFbmRwb2ludHMiOlsiKiJdLCJleHAiOjE1OTM0NzU4OTR9.Cqo7TraN_CFN13q3ae4GRJCMgd8ZOlQwBzyC29M6Aps" // #nosec G101
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", wellFormedToken))
-	token, err := getToken(req)
-	assert.NoError(t, err, "should have been able to parse valid header")
-	assert.Equal(t, wellFormedToken, token, "parsed token incorrectly")
 }
 
 func TestRevokeToken(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword).(*auth)
 
 	// Make a token
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
-	err = auth.revokeToken(tokenStr, testPassword)
+	err = auth.RevokeToken(tokenStr, testPassword)
 	assert.NoError(t, err, "should have succeeded")
 	assert.Len(t, auth.revoked, 1, "revoked token list is incorrect")
-	assert.Equal(t, tokenStr, auth.revoked[0], "revoked token list is incorrect")
 }
 
 func TestWrapHandlerHappyPath(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
 	// Make a token
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
 	wrappedHandler := auth.WrapHandler(dummyHandler)
@@ -195,17 +159,14 @@ func TestWrapHandlerHappyPath(t *testing.T) {
 }
 
 func TestWrapHandlerRevokedToken(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
 	// Make a token
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
-	err = auth.revokeToken(tokenStr, testPassword)
+	err = auth.RevokeToken(tokenStr, testPassword)
 	assert.NoError(t, err)
 
 	wrappedHandler := auth.WrapHandler(dummyHandler)
@@ -216,21 +177,19 @@ func TestWrapHandlerRevokedToken(t *testing.T) {
 		rr := httptest.NewRecorder()
 		wrappedHandler.ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
-		assert.Contains(t, rr.Body.String(), ErrTokenRevoked.Error())
+		assert.Contains(t, rr.Body.String(), errTokenRevoked.Error())
 		assert.Regexp(t, unAuthorizedResponseRegex, rr.Body.String())
 	}
 }
 
 func TestWrapHandlerExpiredToken(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
-	auth.clock.Set(time.Now().Add(-2 * TokenLifespan))
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword).(*auth)
+
+	auth.clock.Set(time.Now().Add(-2 * defaultTokenLifespan))
 
 	// Make a token that expired well in the past
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
 	wrappedHandler := auth.WrapHandler(dummyHandler)
@@ -241,16 +200,13 @@ func TestWrapHandlerExpiredToken(t *testing.T) {
 		rr := httptest.NewRecorder()
 		wrappedHandler.ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
-		assert.Contains(t, rr.Body.String(), ErrTokenExpired.Error())
+		assert.Contains(t, rr.Body.String(), "expired")
 		assert.Regexp(t, unAuthorizedResponseRegex, rr.Body.String())
 	}
 }
 
 func TestWrapHandlerNoAuthToken(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
 	wrappedHandler := auth.WrapHandler(dummyHandler)
@@ -259,20 +215,17 @@ func TestWrapHandlerNoAuthToken(t *testing.T) {
 		rr := httptest.NewRecorder()
 		wrappedHandler.ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
-		assert.Contains(t, rr.Body.String(), ErrNoToken.Error())
+		assert.Contains(t, rr.Body.String(), errNoToken.Error())
 		assert.Regexp(t, unAuthorizedResponseRegex, rr.Body.String())
 	}
 }
 
 func TestWrapHandlerUnauthorizedEndpoint(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
 	// Make a token
 	endpoints := []string{"/ext/info"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
 	unauthorizedEndpoints := []string{"/ext/bc/X", "/ext/metrics", "", "/foo", "/ext/info/foo"}
@@ -284,24 +237,21 @@ func TestWrapHandlerUnauthorizedEndpoint(t *testing.T) {
 		rr := httptest.NewRecorder()
 		wrappedHandler.ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
-		assert.Contains(t, rr.Body.String(), ErrTokenInsufficientPermission.Error())
+		assert.Contains(t, rr.Body.String(), errTokenInsufficientPermission.Error())
 		assert.Regexp(t, unAuthorizedResponseRegex, rr.Body.String())
 	}
 }
 
 func TestWrapHandlerAuthEndpoint(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
 	// Make a token
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics", "", "/foo", "/ext/info/foo"}
-	tokenStr, err := auth.newToken(testPassword, endpoints)
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
 	assert.NoError(t, err)
 
 	wrappedHandler := auth.WrapHandler(dummyHandler)
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:9650%s", fmt.Sprintf("/ext/%s", Endpoint)), strings.NewReader(""))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:9650/ext/auth", strings.NewReader(""))
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenStr))
 	rr := httptest.NewRecorder()
 	wrappedHandler.ServeHTTP(rr, req)
@@ -309,14 +259,11 @@ func TestWrapHandlerAuthEndpoint(t *testing.T) {
 }
 
 func TestWrapHandlerAccessAll(t *testing.T) {
-	auth := Auth{
-		Enabled:  true,
-		Password: hashedPassword,
-	}
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
 
 	// Make a token that allows access to all endpoints
 	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics", "", "/foo", "/ext/foo/info"}
-	tokenStr, err := auth.newToken(testPassword, []string{"*"})
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, []string{"*"})
 	assert.NoError(t, err)
 
 	wrappedHandler := auth.WrapHandler(dummyHandler)
@@ -329,26 +276,70 @@ func TestWrapHandlerAccessAll(t *testing.T) {
 	}
 }
 
-func TestWrapHandlerAuthDisabled(t *testing.T) {
-	auth := Auth{
-		Enabled:  false,
-		Password: hashedPassword,
-	}
-
-	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics", "", "/foo", "/ext/foo/info", "/ext/auth"}
-
-	wrappedHandler := auth.WrapHandler(dummyHandler)
-	for _, endpoint := range endpoints {
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:9650%s", endpoint), strings.NewReader(""))
-		rr := httptest.NewRecorder()
-		wrappedHandler.ServeHTTP(rr, req)
-		assert.Equal(t, http.StatusOK, rr.Code)
-	}
-}
-
 func TestWriteUnauthorizedResponse(t *testing.T) {
 	rr := httptest.NewRecorder()
 	writeUnauthorizedResponse(rr, errors.New("example err"))
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
-	assert.Equal(t, "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"example err\"},\"id\":1}", rr.Body.String())
+	assert.Equal(t, "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"example err\"},\"id\":1}\n", rr.Body.String())
+}
+
+func TestWrapHandlerMutatedRevokedToken(t *testing.T) {
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword)
+
+	// Make a token
+	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
+	tokenStr, err := auth.NewToken(testPassword, defaultTokenLifespan, endpoints)
+	assert.NoError(t, err)
+
+	err = auth.RevokeToken(tokenStr, testPassword)
+	assert.NoError(t, err)
+
+	wrappedHandler := auth.WrapHandler(dummyHandler)
+
+	for _, endpoint := range endpoints {
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:9650%s", endpoint), strings.NewReader(""))
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenStr+"="))
+		rr := httptest.NewRecorder()
+		wrappedHandler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+		assert.Contains(t, rr.Body.String(), errTokenRevoked.Error())
+		assert.Regexp(t, unAuthorizedResponseRegex, rr.Body.String())
+	}
+}
+
+func TestWrapHandlerInvalidSigningMethod(t *testing.T) {
+	auth := NewFromHash(logging.NoLog{}, "auth", hashedPassword).(*auth)
+
+	// Make a token
+	endpoints := []string{"/ext/info", "/ext/bc/X", "/ext/metrics"}
+	idBytes := [tokenIDByteLen]byte{}
+	if _, err := rand.Read(idBytes[:]); err != nil {
+		t.Fatal(err)
+	}
+	id := base64.URLEncoding.EncodeToString(idBytes[:])
+
+	claims := endpointClaims{
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: auth.clock.Time().Add(defaultTokenLifespan).Unix(),
+			Id:        id,
+		},
+		Endpoints: endpoints,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, &claims)
+	tokenStr, err := token.SignedString(auth.password.Password[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wrappedHandler := auth.WrapHandler(dummyHandler)
+
+	for _, endpoint := range endpoints {
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:9650%s", endpoint), strings.NewReader(""))
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tokenStr+"="))
+		rr := httptest.NewRecorder()
+		wrappedHandler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+		assert.Contains(t, rr.Body.String(), errInvalidSigningMethod.Error())
+		assert.Regexp(t, unAuthorizedResponseRegex, rr.Body.String())
+	}
 }

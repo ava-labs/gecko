@@ -119,7 +119,7 @@ func newEventIPCSocket(ctx context, chainID ids.ID, name string, events *trigger
 		return nil, err
 	}
 
-	if err := events.RegisterChain(chainID, ipcName, eis); err != nil {
+	if err := events.RegisterChain(chainID, ipcName, eis, false); err != nil {
 		if err := eis.stop(); err != nil {
 			return nil, err
 		}

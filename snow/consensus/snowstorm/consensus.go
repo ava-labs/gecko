@@ -60,6 +60,9 @@ type Consensus interface {
 	// that this instance is no longer finalized.
 	Finalized() bool
 
+	// HealthCheck returns information about the consensus health.
+	HealthCheck() (interface{}, error)
+
 	// Accept the provided tx remove it from the graph
 	accept(txID ids.ID) error
 

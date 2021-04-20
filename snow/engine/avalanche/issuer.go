@@ -69,7 +69,7 @@ func (i *issuer) Update() {
 	// Take the valid transactions and issue a new vertex with them.
 	if len(validTxs) != len(txs) {
 		i.t.Ctx.Log.Debug("Abandoning %s due to failed transaction verification", vtxID)
-		if err := i.t.batch(validTxs, false /*=force*/, false /*=empty*/); err != nil {
+		if _, err := i.t.batch(validTxs, false /*=force*/, false /*=empty*/, false /*=limit*/); err != nil {
 			i.t.errs.Add(err)
 		}
 		i.t.vtxBlocked.Abandon(vtxID)
@@ -110,7 +110,7 @@ func (i *issuer) Update() {
 	}
 
 	// Issue a repoll
-	i.t.errs.Add(i.t.repoll())
+	i.t.repoll()
 }
 
 type vtxIssuer struct{ i *issuer }

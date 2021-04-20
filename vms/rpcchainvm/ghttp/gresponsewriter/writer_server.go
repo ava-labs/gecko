@@ -22,13 +22,17 @@ import (
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/grpcutils"
 )
 
-// Server is a http.Handler that is managed over RPC.
+var (
+	_ gresponsewriterproto.WriterServer = &Server{}
+)
+
+// Server is an http.ResponseWriter that is managed over RPC.
 type Server struct {
 	writer http.ResponseWriter
 	broker *plugin.GRPCBroker
 }
 
-// NewServer returns a http.Handler instance manage remotely
+// NewServer returns an http.ResponseWriter instance managed remotely
 func NewServer(writer http.ResponseWriter, broker *plugin.GRPCBroker) *Server {
 	return &Server{
 		writer: writer,
@@ -36,7 +40,6 @@ func NewServer(writer http.ResponseWriter, broker *plugin.GRPCBroker) *Server {
 	}
 }
 
-// Write ...
 func (s *Server) Write(ctx context.Context, req *gresponsewriterproto.WriteRequest) (*gresponsewriterproto.WriteResponse, error) {
 	headers := s.writer.Header()
 	for key := range headers {
@@ -55,7 +58,6 @@ func (s *Server) Write(ctx context.Context, req *gresponsewriterproto.WriteReque
 	}, nil
 }
 
-// WriteHeader ...
 func (s *Server) WriteHeader(ctx context.Context, req *gresponsewriterproto.WriteHeaderRequest) (*gresponsewriterproto.WriteHeaderResponse, error) {
 	headers := s.writer.Header()
 	for key := range headers {
@@ -68,7 +70,6 @@ func (s *Server) WriteHeader(ctx context.Context, req *gresponsewriterproto.Writ
 	return &gresponsewriterproto.WriteHeaderResponse{}, nil
 }
 
-// Flush ...
 func (s *Server) Flush(ctx context.Context, req *gresponsewriterproto.FlushRequest) (*gresponsewriterproto.FlushResponse, error) {
 	flusher, ok := s.writer.(http.Flusher)
 	if !ok {
@@ -78,7 +79,6 @@ func (s *Server) Flush(ctx context.Context, req *gresponsewriterproto.FlushReque
 	return &gresponsewriterproto.FlushResponse{}, nil
 }
 
-// Hijack ...
 func (s *Server) Hijack(ctx context.Context, req *gresponsewriterproto.HijackRequest) (*gresponsewriterproto.HijackResponse, error) {
 	hijacker, ok := s.writer.(http.Hijacker)
 	if !ok {

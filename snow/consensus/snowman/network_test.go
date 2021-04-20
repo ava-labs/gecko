@@ -61,7 +61,7 @@ func (n *Network) Initialize(params snowball.Parameters, numColors int) {
 
 func (n *Network) AddNode(sm Consensus) error {
 	n.params.Metrics = prometheus.NewRegistry()
-	if err := sm.Initialize(snow.DefaultContextTest(), n.params, Genesis.ID()); err != nil {
+	if err := sm.Initialize(snow.DefaultContextTest(), n.params, Genesis.ID(), Genesis.Height()); err != nil {
 		return err
 	}
 

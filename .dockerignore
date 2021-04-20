@@ -1,0 +1,10 @@
+.ci
+.git
+.github
+.gitignore
+.golangci.yml
+.idea
+.vscode
+
+LICENSE
+*.md

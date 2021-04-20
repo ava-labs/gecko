@@ -12,12 +12,15 @@ import (
 )
 
 var (
-	errBuildBlock = errors.New("unexpectedly called BuildBlock")
-	errParseBlock = errors.New("unexpectedly called ParseBlock")
-	errGetBlock   = errors.New("unexpectedly called GetBlock")
+	errBuildBlock   = errors.New("unexpectedly called BuildBlock")
+	errParseBlock   = errors.New("unexpectedly called ParseBlock")
+	errGetBlock     = errors.New("unexpectedly called GetBlock")
+	errLastAccepted = errors.New("unexpectedly called LastAccepted")
+
+	_ ChainVM = &TestVM{}
 )
 
-// TestVM ...
+// TestVM is a ChainVM that is useful for testing.
 type TestVM struct {
 	common.TestVM
 
@@ -30,11 +33,10 @@ type TestVM struct {
 	BuildBlockF    func() (snowman.Block, error)
 	ParseBlockF    func([]byte) (snowman.Block, error)
 	GetBlockF      func(ids.ID) (snowman.Block, error)
-	SetPreferenceF func(ids.ID)
-	LastAcceptedF  func() ids.ID
+	SetPreferenceF func(ids.ID) error
+	LastAcceptedF  func() (ids.ID, error)
 }
 
-// Default ...
 func (vm *TestVM) Default(cant bool) {
 	vm.TestVM.Default(cant)
 
@@ -45,7 +47,6 @@ func (vm *TestVM) Default(cant bool) {
 	vm.CantLastAccepted = cant
 }
 
-// BuildBlock ...
 func (vm *TestVM) BuildBlock() (snowman.Block, error) {
 	if vm.BuildBlockF != nil {
 		return vm.BuildBlockF()
@@ -56,7 +57,6 @@ func (vm *TestVM) BuildBlock() (snowman.Block, error) {
 	return nil, errBuildBlock
 }
 
-// ParseBlock ...
 func (vm *TestVM) ParseBlock(b []byte) (snowman.Block, error) {
 	if vm.ParseBlockF != nil {
 		return vm.ParseBlockF(b)
@@ -67,7 +67,6 @@ func (vm *TestVM) ParseBlock(b []byte) (snowman.Block, error) {
 	return nil, errParseBlock
 }
 
-// GetBlock ...
 func (vm *TestVM) GetBlock(id ids.ID) (snowman.Block, error) {
 	if vm.GetBlockF != nil {
 		return vm.GetBlockF(id)
@@ -78,22 +77,22 @@ func (vm *TestVM) GetBlock(id ids.ID) (snowman.Block, error) {
 	return nil, errGetBlock
 }
 
-// SetPreference ...
-func (vm *TestVM) SetPreference(id ids.ID) {
+func (vm *TestVM) SetPreference(id ids.ID) error {
 	if vm.SetPreferenceF != nil {
-		vm.SetPreferenceF(id)
-	} else if vm.CantSetPreference && vm.T != nil {
+		return vm.SetPreferenceF(id)
+	}
+	if vm.CantSetPreference && vm.T != nil {
 		vm.T.Fatalf("Unexpectedly called SetPreference")
 	}
+	return nil
 }
 
-// LastAccepted ...
-func (vm *TestVM) LastAccepted() ids.ID {
+func (vm *TestVM) LastAccepted() (ids.ID, error) {
 	if vm.LastAcceptedF != nil {
 		return vm.LastAcceptedF()
 	}
 	if vm.CantLastAccepted && vm.T != nil {
 		vm.T.Fatalf("Unexpectedly called LastAccepted")
 	}
-	return ids.ID{}
+	return ids.ID{}, errLastAccepted
 }

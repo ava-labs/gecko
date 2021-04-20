@@ -276,6 +276,11 @@ func (s *state) RemoveValue(key []byte) error {
 		return s.valueDB.Put(key, valueBytes)
 	}
 
+	// Don't allow the removal of something that was already removed.
+	if !value.Present {
+		return errDuplicatedOperation
+	}
+
 	for _, trait := range value.Traits {
 		traitDB := prefixdb.New(trait, s.indexDB)
 		if err := traitDB.Delete(key); err != nil {
@@ -312,29 +317,37 @@ func (s *state) getKeys(traits [][]byte, startTrait, startKey []byte, limit int)
 		}
 
 		lastTrait = trait
-		lastKey = startKey
-
-		traitDB := prefixdb.New(trait, s.indexDB)
-		iter := traitDB.NewIteratorWithStart(startKey)
-		for iter.Next() {
-			if limit == 0 {
-				iter.Release()
-				return keys, lastTrait, lastKey, nil
-			}
-
-			key := iter.Key()
-			lastKey = key
-
-			id := hashing.ComputeHash256Array(key)
-			if tracked.Contains(id) {
-				continue
-			}
-
-			tracked.Add(id)
-			keys = append(keys, key)
-			limit--
+		var err error
+		lastKey, err = s.appendTraitKeys(&keys, &tracked, &limit, trait, startKey)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		iter.Release()
+
+		if limit == 0 {
+			break
+		}
 	}
 	return keys, lastTrait, lastKey, nil
+}
+
+func (s *state) appendTraitKeys(keys *[][]byte, tracked *ids.Set, limit *int, trait, startKey []byte) ([]byte, error) {
+	lastKey := startKey
+
+	traitDB := prefixdb.New(trait, s.indexDB)
+	iter := traitDB.NewIteratorWithStart(startKey)
+	defer iter.Release()
+	for iter.Next() && *limit > 0 {
+		key := iter.Key()
+		lastKey = key
+
+		id := hashing.ComputeHash256Array(key)
+		if tracked.Contains(id) {
+			continue
+		}
+
+		tracked.Add(id)
+		*keys = append(*keys, key)
+		*limit--
+	}
+	return lastKey, iter.Error()
 }

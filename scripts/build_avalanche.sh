@@ -10,7 +10,7 @@ GOPATH="$(go env GOPATH)"
 AVALANCHE_PATH=$( cd "$( dirname "${BASH_SOURCE[0]}" )"; cd .. && pwd ) # Directory above this script
 BUILD_DIR=$AVALANCHE_PATH/build # Where binaries go
 
-GIT_COMMIT=$( git rev-list -1 HEAD )
+GIT_COMMIT=${AVALANCHEGO_COMMIT:-$( git rev-list -1 HEAD )}
 
 # Build aVALANCHE
 echo "Building Avalanche..."

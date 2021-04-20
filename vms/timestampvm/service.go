@@ -5,6 +5,7 @@ package timestampvm
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/ava-labs/avalanchego/ids"
@@ -66,18 +67,21 @@ type GetBlockReply struct {
 // GetBlock gets the block whose ID is [args.ID]
 // If [args.ID] is empty, get the latest block
 func (s *Service) GetBlock(_ *http.Request, args *GetBlockArgs, reply *GetBlockReply) error {
-	var ID ids.ID
+	var id ids.ID
 	var err error
 	if args.ID == "" {
-		ID = s.vm.LastAccepted()
+		id, err = s.vm.LastAccepted()
+		if err != nil {
+			return fmt.Errorf("problem finding the last accepted ID: %s", err)
+		}
 	} else {
-		ID, err = ids.FromString(args.ID)
+		id, err = ids.FromString(args.ID)
 		if err != nil {
 			return errors.New("problem parsing ID")
 		}
 	}
 
-	blockInterface, err := s.vm.GetBlock(ID)
+	blockInterface, err := s.vm.GetBlock(id)
 	if err != nil {
 		return errNoSuchBlock
 	}

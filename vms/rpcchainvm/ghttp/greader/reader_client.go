@@ -6,19 +6,23 @@ package greader
 import (
 	"context"
 	"errors"
+	"io"
 
 	"github.com/ava-labs/avalanchego/vms/rpcchainvm/ghttp/greader/greaderproto"
 )
 
-// Client is an implementation of a messenger channel that talks over RPC.
+var (
+	_ io.Reader = &Client{}
+)
+
+// Client is a reader that talks over RPC.
 type Client struct{ client greaderproto.ReaderClient }
 
-// NewClient returns a database instance connected to a remote database instance
+// NewClient returns a reader connected to a remote reader
 func NewClient(client greaderproto.ReaderClient) *Client {
 	return &Client{client: client}
 }
 
-// Read ...
 func (c *Client) Read(p []byte) (int, error) {
 	resp, err := c.client.Read(context.Background(), &greaderproto.ReadRequest{
 		Length: int32(len(p)),

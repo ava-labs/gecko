@@ -138,7 +138,8 @@ func (vtx *uniqueVertex) setStatus(status choices.Status) error {
 	return vtx.serializer.state.SetStatus(vtx.ID(), status)
 }
 
-func (vtx *uniqueVertex) ID() ids.ID { return vtx.vtxID }
+func (vtx *uniqueVertex) ID() ids.ID       { return vtx.vtxID }
+func (vtx *uniqueVertex) Key() interface{} { return vtx.vtxID }
 
 func (vtx *uniqueVertex) Accept() error {
 	if err := vtx.setStatus(choices.Accepted); err != nil {
@@ -235,7 +236,7 @@ func (vtx *uniqueVertex) Txs() ([]snowstorm.Tx, error) {
 	if len(txs) != len(vtx.v.txs) {
 		vtx.v.txs = make([]snowstorm.Tx, len(txs))
 		for i, txBytes := range txs {
-			tx, err := vtx.serializer.vm.Parse(txBytes)
+			tx, err := vtx.serializer.vm.ParseTx(txBytes)
 			if err != nil {
 				return nil, err
 			}
