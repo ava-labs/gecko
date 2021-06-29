@@ -53,6 +53,7 @@ const (
 	defaultReadHandshakeTimeout                      = 15 * time.Second
 	defaultConnMeterCacheSize                        = 1024
 	defaultByteSliceCap                              = 128
+	defaultConcurrentUpgrades                        = 64
 )
 
 var (
@@ -221,6 +222,8 @@ type network struct {
 	// A node is present in this map if and only if we are actively
 	// trying to dial the node.
 	connAttempts sync.Map
+
+	upgradeSem chan struct{}
 
 	// Contains []byte. Used as an optimization.
 	// Can be accessed by multiple goroutines concurrently.
@@ -406,6 +409,7 @@ func NewNetwork(
 				return make([]byte, 0, defaultByteSliceCap)
 			},
 		},
+		upgradeSem: make(chan struct{}, defaultConcurrentUpgrades),
 	}
 	netw.b = Builder{
 		getByteSlice: func() []byte {
@@ -852,6 +856,7 @@ func (n *network) Dispatch() error {
 		n.maskedValidators.Clear()
 		n.log.Verbo("The new staking set is:\n%s", n.vdrs)
 	}()
+
 	for { // Continuously accept new connections
 		conn, err := n.listener.Accept() // Returns error when n.Close() is called
 		if err != nil {
@@ -885,8 +890,14 @@ func (n *network) Dispatch() error {
 			return fmt.Errorf("unable to convert remote address %s to IPDesc: %w", remoteAddr, err)
 		}
 		ipStr := ip.IP.String()
-		upgrade := n.shouldUpgradeIncoming(ipStr)
-		if !upgrade {
+		if !n.shouldUpgradeIncoming(ipStr) {
+			_ = conn.Close()
+			continue
+		}
+		select {
+		case n.upgradeSem <- struct{}{}:
+		default:
+			n.log.Debug("discarding incoming conn due to too many concurrent upgrades: %s", ipStr)
 			_ = conn.Close()
 			continue
 		}
@@ -902,8 +913,9 @@ func (n *network) Dispatch() error {
 
 		go func() {
 			if err := n.upgrade(newPeer(n, conn, utils.IPDesc{}), n.serverUpgrader); err != nil {
-				n.log.Verbo("failed to upgrade connection: %s", err)
+				n.log.Debug("failed to upgrade incoming connection: %s", err)
 			}
+			<-n.upgradeSem
 		}()
 	}
 }
@@ -1220,7 +1232,6 @@ func (n *network) connectTo(ip utils.IPDesc, nodeID ids.ShortID) {
 
 			// If the network was closed, we should stop attempting to connect
 			// to the peer
-
 			n.stateLock.Unlock()
 			return
 		}
@@ -1238,6 +1249,13 @@ func (n *network) connectTo(ip utils.IPDesc, nodeID ids.ShortID) {
 			}
 		}
 
+		select {
+		case n.upgradeSem <- struct{}{}:
+		default:
+			n.log.Debug("waiting on connection attempt due to too many concurrent upgrades: %s", ip.IP.String())
+			continue
+		}
+
 		// When [cancel] is called, we give up on this attempt to connect
 		// (if we have not yet connected.)
 		// This occurs at the sooner of:
@@ -1248,6 +1266,7 @@ func (n *network) connectTo(ip utils.IPDesc, nodeID ids.ShortID) {
 
 		// Attempt to connect
 		err := n.attemptConnect(ctx, ip)
+		<-n.upgradeSem
 		cancel() // to avoid goroutine leak
 
 		n.connAttempts.Delete(nodeID)
@@ -1255,7 +1274,7 @@ func (n *network) connectTo(ip utils.IPDesc, nodeID ids.ShortID) {
 		if err == nil {
 			return
 		}
-		n.log.Verbo("error attempting to connect to %s: %s. Reattempting in %s",
+		n.log.Debug("error attempting to connect to %s: %s. Reattempting in %s",
 			ip, err, delay)
 	}
 }
@@ -1302,12 +1321,12 @@ func (n *network) upgrade(p *peer, upgrader Upgrader) error {
 	nodeID, conn, cert, err := upgrader.Upgrade(p.conn)
 	if err != nil {
 		_ = p.conn.Close()
-		n.log.Verbo("failed to upgrade connection with %s", err)
+		n.log.Debug("failed to upgrade connection with %s", err)
 		return err
 	}
 
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
-		_ = p.conn.Close()
+		_ = conn.Close()
 		n.log.Verbo("failed to clear the read deadline with %s", err)
 		return err
 	}
