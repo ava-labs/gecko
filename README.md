@@ -60,6 +60,17 @@ The image should be tagged as `avaplatform/avalanchego:xxxxxxxx`, where `xxxxxxx
 docker run -ti -p 9650:9650 -p 9651:9651 avaplatform/avalanchego:xxxxxxxx /avalanchego/build/avalanchego
 ```
 
+#### Example how to run fixed Dockerfile on your local machine (non root running inside docker)
+Dockerfile should not run under root - we create user ava01 (uid 1001) in group ava01 (gid 1001). You can easily make external disk  to hold all /home/ava01/.avalanchego files, but remember to change it's owner to 1001 in host machine.
+
+```sh
+docker build . -t ava
+
+mkdir /tmp/data && chown 1001:1001 /tmp/data
+
+docker run -it -p9650:9650 -p9651:9651 -v /tmp/data:/home/ava01/.avalanchego ava --restart unless-stopped avaplatform/avalanchego /avalanchego/build/avalanchego --network-id=fuji  --http-host=
+```
+ 
 ## Running Avalanche
 
 ### Connecting to Mainnet
