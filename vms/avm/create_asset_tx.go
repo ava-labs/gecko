@@ -19,7 +19,7 @@ const (
 	minNameLen      = 1
 	maxNameLen      = 128
 	minSymbolLen    = 1
-	maxSymbolLen    = 4
+	maxSymbolLen    = 5
 	maxDenomination = 32
 )
 

@@ -17,7 +17,7 @@ import (
 
 var (
 	nameTooLong          = "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
-	symbolTooLong        = "LLLLL"
+	symbolTooLong        = "LLLLLL"
 	illegalNameCharacter = "h8*32"
 	invalidASCIIStr      = "ÉÎ"
 	invalidWhitespaceStr = " HAT"
@@ -416,8 +416,8 @@ func TestCreateAssetTxSyntacticVerifySymbolTooLong(t *testing.T) {
 			NetworkID:    networkID,
 			BlockchainID: chainID,
 		}},
-		Name:         "TOM",
-		Symbol:       "BRADY",
+		Name:         "MICHAEL",
+		Symbol:       "JORDAN",
 		Denomination: 0,
 		States: []*InitialState{{
 			FxID: 0,
