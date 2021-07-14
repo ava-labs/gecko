@@ -11,7 +11,7 @@
       --min-delegator-stake="{{ min_delegator_stake }}"
       --assertions-enabled="{{ assertions_enabled }}"
       --signature-verification-enabled="{{ signature_verification_enabled }}"
-      --db-enabled="{{ db_enabled }}"
+      --db-type="{{ db_type}}"
       --db-dir="{{ db_dir }}"
       --http-host="{{ http_host }}"
       --http-port="{{ http_port }}"
